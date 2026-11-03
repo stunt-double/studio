@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest an improvement or a new capability.
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options:
+        - Studio (npx stuntdouble studio)
+        - MCP server (npx stuntdouble mcp)
+        - Viewer (npx stuntdouble view)
+        - CLI (run, login, doctor)
+        - Repository (CI, tooling, docs)
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: The behaviour you have in mind. Alternatives you considered are welcome too.

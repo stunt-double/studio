@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in Studio or the MCP server does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to report this. Please search existing issues first.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where
+      options:
+        - Studio (npx stuntdouble studio)
+        - MCP server (npx stuntdouble mcp)
+        - Viewer (npx stuntdouble view)
+        - CLI (run, login, doctor)
+        - Repository (CI, tooling, docs)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The version `npx` ran (`npm view stuntdouble version` for the latest), or the one in your lockfile.
+      placeholder: 0.1.3
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The actor and checklist files, or the steps that show the problem. Leave out API keys and other secrets.
+  - type: textarea
+    id: doctor
+    attributes:
+      label: npx stuntdouble doctor
+      description: Its output, which covers Node, Chrome, the viewer port and the project.
+      render: text
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, model connection (Anthropic, OpenAI-compatible endpoint, or your coding agent) and model.
