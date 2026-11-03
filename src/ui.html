@@ -1535,15 +1535,24 @@
       };
 
       // A Studio run names its model; the runs list leaves "self-judged" to the run's page.
+      // A run an agent started over MCP names it (agents.ts has the same names).
+      const agentName = (client) =>
+        client.name === 'claude-code'
+          ? 'Claude Code'
+          : client.name === 'codex' || client.name.startsWith('codex-mcp-client')
+            ? 'Codex'
+            : 'MCP client ' + client.name;
       const runner = (run, full) =>
         run.runner.kind === 'cloud'
           ? { icon: 'server', label: 'Cloud' }
-          : {
-              icon: 'monitor',
-              label: run.runner.model
-                ? 'Local, ' + run.runner.model.id + (full ? ', self-judged' : '')
-                : 'Local, self-judged',
-            };
+          : run.runner.client
+            ? { icon: 'monitor', label: agentName(run.runner.client) }
+            : {
+                icon: 'monitor',
+                label: run.runner.model
+                  ? 'Local, ' + run.runner.model.id + (full ? ', self-judged' : '')
+                  : 'Local, self-judged',
+              };
       const checklistName = (run) =>
         run.checklist_name ||
         (run.checklist_snapshot && run.checklist_snapshot.name) ||

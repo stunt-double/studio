@@ -9,6 +9,7 @@ import { DIRECT_TOOL_SPECS } from '@stuntkit/browser-toolset/direct-tools';
 import { dirname } from 'node:path';
 import { z } from 'zod';
 
+import { registerAgent, unregisterAgent } from './agents.ts';
 import { projectDir } from './files.ts';
 import { LocalSession, PACKAGE, type ToolOutput } from './run.ts';
 
@@ -148,6 +149,14 @@ export function createServer(session: LocalSession): McpServer {
       })
   );
 
+  // Who is connected: recorded on `initialize`, so Studio can show the agent.
+  server.server.oninitialized = () => {
+    const info = server.server.getClientVersion();
+    if (!info) return;
+    session.client = { name: info.name, version: info.version };
+    void registerAgent(session.root, dirname(session.root), session.client).catch(() => {});
+  };
+
   return server;
 }
 
@@ -156,7 +165,11 @@ export async function serveMcp(): Promise<void> {
   const server = createServer(session);
   // stdin closing and the SIGTERM that follows both land here; close once.
   let closing: Promise<void> | undefined;
-  const shutdown = () => (closing ??= session.close().finally(() => process.exit(0)));
+  const shutdown = () =>
+    (closing ??= unregisterAgent(session.root)
+      .catch(() => {})
+      .then(() => session.close())
+      .finally(() => process.exit(0)));
   process.stdin.on('close', shutdown);
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);

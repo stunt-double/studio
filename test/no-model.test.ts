@@ -121,7 +121,21 @@ test('no source file imports a model SDK, the Agent SDK included', async () => {
 
 test('nothing starts claude, and the one process started is the browser opener', async () => {
   for (const { file, text } of await sources()) {
-    assert.doesNotMatch(text, /['"`]claude['"`\s]/, `${file} names the claude binary`);
+    // Agents connect to us; the Studio never starts one. The setup commands the
+    // Settings page shows to copy are text, so what is forbidden is a spawn:
+    // a process call naming the binary, or the binary as a command array.
+    for (const bin of ['claude', 'codex']) {
+      assert.doesNotMatch(
+        text,
+        new RegExp(`(?:spawn|exec|execFile|fork)\\w*\\(\\s*['"\`]${bin}['"\`]`),
+        `${file} starts ${bin}`
+      );
+      assert.doesNotMatch(
+        text,
+        new RegExp(`\\[\\s*['"\`]${bin}['"\`]\\s*,\\s*\\[`),
+        `${file} lists ${bin} as a command`
+      );
+    }
     if (/child_process/.test(text))
       assert.equal(file, 'open-browser.ts', `${file} starts a process`);
   }
@@ -135,6 +149,8 @@ test('no Claude credentials, config or login are read, and keys come from one mo
   for (const { file, text } of await sources()) {
     assert.doesNotMatch(text, /CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_AUTH_TOKEN/, file);
     assert.doesNotMatch(text, /['"`/\\]\.claude\b/, `${file} touches ~/.claude`);
+    // Nor Codex's: its config and sign-in (auth.json) are the person's own.
+    assert.doesNotMatch(text, /['"`]\.codex['"`]|auth\.json|CODEX_HOME|\/\.codex\/auth/, file);
     assert.doesNotMatch(text, /keychain|find-generic-password/i, file);
     assert.doesNotMatch(text, /claude\.ai/, `${file} names claude.ai`);
     // doctor may say whether ANTHROPIC_API_KEY is set; only credentials.ts reads it.
