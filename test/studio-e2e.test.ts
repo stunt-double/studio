@@ -229,7 +229,8 @@ test('studio: onboarding, editing, a run on a scripted model, and the run in the
   let final;
   for (let i = 0; i < 120; i++) {
     const data = await (await api(`/api/runs/${encodeURIComponent(id)}`)).json();
-    if (data.run && data.run.status !== 'running') {
+    // Usage is written just after the run ends: wait for it, or a loaded machine reads too soon.
+    if (data.run && data.run.status !== 'running' && data.run.runner.usage) {
       final = data;
       break;
     }

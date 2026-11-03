@@ -15,6 +15,8 @@ jobs:
     name: Analyse (javascript-typescript)
     runs-on: ubuntu-latest
     permissions:
+      # CodeQL reads its own workflow run; in a private repository that needs actions: read.
+      actions: read
       contents: read
       security-events: write
     steps:

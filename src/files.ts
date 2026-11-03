@@ -161,6 +161,8 @@ export const RunSchema = z.object({
     judged: z.boolean(),
     run_id: z.string().optional(),
     url: z.string().optional(),
+    /** The MCP client that started a local run (Claude Code, Codex, ...), from its `initialize`. */
+    client: z.object({ name: z.string(), version: z.string() }).optional(),
     /** A standalone Studio run: the model on the person's own connection. */
     model: z.object({ provider: z.string(), id: z.string() }).optional(),
     /** What a standalone run used, when the provider reports it. */

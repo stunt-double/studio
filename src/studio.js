@@ -104,6 +104,16 @@
     .usage .mono { font-variant-numeric: tabular-nums; color: var(--foreground); }
     .presets { display: flex; flex-wrap: wrap; gap: 0.375rem; }
     .settings-card { padding: 1.25rem; display: grid; gap: 1rem; }
+    .agent-top { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; justify-content: space-between; }
+    .agent-top strong { font-weight: 500; }
+    .agent-block { display: grid; gap: 0.5rem; }
+    .agent-block pre {
+      margin: 0; padding: 0.75rem 1rem; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+      border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--muted);
+      font-family: var(--font-mono); font-size: 0.8125rem;
+    }
+    .agent-block .label { font-size: 0.8125rem; color: var(--muted-foreground); }
+    .handoff { display: grid; gap: 0.5rem; margin-top: 0.25rem; }
     .result-text { font-size: 0.8125rem; }
     .result-text.ok { color: var(--success-ink); }
     .result-text.bad { color: var(--destructive); }
@@ -1103,6 +1113,13 @@
       ];
     const c = status.connection;
     const cloud = status.cloud;
+    const { agents } = await getJson('/api/studio/agents').catch(() => ({ agents: [] }));
+    const agentHint = (kind, name) =>
+      agents.some((a) => a.kind === kind)
+        ? 'Connected. You paste a prompt into ' + name + ' and it runs on your own plan.'
+        : 'Not connected yet: set it up under Settings, Agents. You paste a prompt into ' +
+          name +
+          '.';
     const local = c.configured && !(c.key === 'none' && c.provider === 'anthropic');
     const option = (value, title, hint, enabled) =>
       h(
@@ -1134,7 +1151,9 @@
               '. Needs a public or preview address.'
           : 'Sign in to Stunt Double in Settings, on a paid plan.',
         cloud.signed_in && Boolean(cloud.workspace)
-      )
+      ),
+      option('claude-code', 'In Claude Code', agentHint('claude-code', 'Claude Code'), true),
+      option('codex', 'In Codex', agentHint('codex', 'Codex'), true)
     );
     const first = choice.querySelector('input:not(:disabled)');
     if (first) first.checked = true;
@@ -1145,6 +1164,62 @@
       icon('play'),
       h('span', {}, 'Start run')
     );
+    // Choosing an agent shows the prompt to paste; the run opens when it appears.
+    const handoff = h('div', { class: 'handoff', hidden: true });
+    const label = start.lastChild;
+    let waiting = null;
+    const here = location.pathname;
+    const stopWaiting = () => {
+      clearInterval(waiting);
+      waiting = null;
+    };
+    const sync = () => {
+      const where = choice.querySelector('input:checked')?.value;
+      const agent = where === 'claude-code' || where === 'codex';
+      stopWaiting();
+      clearTimeout(start.resetLabel);
+      delete label.dataset.label;
+      label.textContent = agent ? 'Copy prompt and wait' : 'Start run';
+      handoff.hidden = !agent;
+      if (!agent) return;
+      const prompt = agentPrompt(where, slug);
+      handoff.replaceChildren(
+        h(
+          'span',
+          { class: 'hint' },
+          'Paste this into ' + (where === 'codex' ? 'Codex' : 'Claude Code') + ':'
+        ),
+        h('div', { class: 'agent-block' }, h('pre', {}, prompt))
+      );
+    };
+    choice.addEventListener('change', sync);
+    sync();
+    const waitFor = async () => {
+      const known = new Set((await getJson('/api/runs')).map((r) => r.id));
+      const since = Date.now();
+      const note = h(
+        'p',
+        { class: 'result-text', role: 'status' },
+        'Waiting for the run to start. Paste the prompt into your agent.'
+      );
+      handoff.append(note);
+      waiting = setInterval(async () => {
+        // A redraw may replace this form; the wait is over only when the person leaves.
+        if (location.pathname !== here) return stopWaiting();
+        const runs = await getJson('/api/runs').catch(() => []);
+        const found = runs.find(
+          (r) =>
+            r.checklist === slug &&
+            !known.has(r.id) &&
+            r.runner.kind === 'local' &&
+            r.runner.client &&
+            Date.parse(r.started_at) >= since - 5000
+        );
+        if (!found) return;
+        stopWaiting();
+        go('/runs/' + encodeURIComponent(found.id));
+      }, 1500);
+    };
     const form = h(
       'form',
       {
@@ -1153,10 +1228,17 @@
           event.preventDefault();
           const where = choice.querySelector('input:checked')?.value;
           if (!where) return;
+          if (where === 'claude-code' || where === 'codex') {
+            const prompt = agentPrompt(where, slug);
+            await sd.copy(prompt, start);
+            if (!waiting) await waitFor();
+            return;
+          }
           error.textContent = (await startRun(slug, where, false, start)) || '';
         },
       },
       choice,
+      handoff,
       h(
         'div',
         { class: 'form-actions' },
@@ -1293,6 +1375,134 @@
     ['Ollama', 'http://localhost:11434/v1', 'qwen3.5:9b'],
     ['LM Studio', 'http://localhost:1234/v1', ''],
   ];
+
+  // ── Agents ────────────────────────────────────────────────────────────────
+  // Claude Code and Codex connect to this project as MCP clients. Studio never
+  // starts them: it shows who is connected and the one-time setup to copy.
+  const shellQuote = (v) => (/^[\w@%+=:,./-]+$/.test(v) ? v : "'" + v.replace(/'/g, "'\\''") + "'");
+
+  function agentSetup(project) {
+    const env = 'STUNTDOUBLE_PROJECT_DIR=' + project;
+    return {
+      'claude-code': [
+        {
+          label: 'Install the Stunt Double plugin, once:',
+          text: [
+            'claude plugin marketplace add stunt-double/stuntdouble-mcp',
+            'claude plugin install stuntdouble@stuntdouble',
+          ].join('\n'),
+        },
+      ],
+      codex: [
+        {
+          label: 'Add the MCP server, once:',
+          text: 'codex mcp add stuntdouble --env ' + shellQuote(env) + ' -- npx -y stuntdouble mcp',
+        },
+        {
+          label: 'Or put this in ~/.codex/config.toml:',
+          text: [
+            '[mcp_servers.stuntdouble]',
+            'command = "npx"',
+            'args = ["-y", "stuntdouble", "mcp"]',
+            'env = { STUNTDOUBLE_PROJECT_DIR = ' + JSON.stringify(project) + ' }',
+          ].join('\n'),
+        },
+      ],
+      other: [
+        {
+          label: 'Start the MCP server over stdio from your client:',
+          text: shellQuote(env) + ' npx -y stuntdouble mcp',
+        },
+      ],
+    };
+  }
+
+  const AGENTS = [
+    ['claude-code', 'Claude Code'],
+    ['codex', 'Codex'],
+    ['other', 'Other MCP client'],
+  ];
+
+  /** The prompt a person pastes into their agent to run a checklist. */
+  function agentPrompt(kind, checklist) {
+    if (kind === 'claude-code') return '/stuntdouble run ' + checklist;
+    return (
+      'Use the stuntdouble MCP server to run the checklist "' +
+      checklist +
+      '": call start_run with checklist "' +
+      checklist +
+      '", follow the brief it returns, judge each check with evaluate_check as you go, and end with finish_run.'
+    );
+  }
+
+  function copyButton(text, label) {
+    return h(
+      'button',
+      { type: 'button', class: 'btn outline', onclick: (e) => sd.copy(text, e.currentTarget) },
+      icon('copy'),
+      h('span', {}, label || 'Copy')
+    );
+  }
+
+  function connectedBadge(agents) {
+    return agents.length
+      ? h(
+          'span',
+          { class: 'badge success' },
+          'Connected, ' + agents.map((a) => a.version).join(', ')
+        )
+      : h('span', { class: 'badge quiet' }, 'Not connected');
+  }
+
+  function agentsSection() {
+    const list = h('div', { class: 'stack' });
+    const setup = agentSetup(status.project);
+    const draw = (agents) =>
+      list.replaceChildren(
+        ...AGENTS.map(([kind, title]) =>
+          h(
+            'div',
+            { class: 'card settings-card' },
+            h(
+              'div',
+              { class: 'agent-top' },
+              h('strong', {}, title),
+              connectedBadge(agents.filter((a) => a.kind === kind))
+            ),
+            ...setup[kind].map((block) =>
+              h(
+                'div',
+                { class: 'agent-block' },
+                h('span', { class: 'label' }, block.label),
+                h('pre', {}, block.text),
+                h('div', {}, copyButton(block.text, 'Copy'))
+              )
+            )
+          )
+        )
+      );
+    const load = async () => {
+      const { agents } = await getJson('/api/studio/agents');
+      draw(agents);
+    };
+    load().catch(() => draw([]));
+    // Connected agents come and go while the page is open.
+    const timer = setInterval(() => {
+      if (!list.isConnected) return clearInterval(timer);
+      load().catch(() => {});
+    }, 3000);
+    return h(
+      'section',
+      { class: 'section' },
+      h('h2', { class: 'section-title' }, 'Agents'),
+      h(
+        'p',
+        { class: 'section-note' },
+        'Your own coding agent can run a checklist here, on its own plan. It connects to Studio; Studio never starts it and never reads its sign-in.'
+      ),
+      list
+    );
+  }
 
   async function renderSettings() {
     await refresh();
@@ -1545,6 +1755,7 @@
           ),
           form
         ),
+        agentsSection(),
         h(
           'section',
           { class: 'section' },

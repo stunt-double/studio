@@ -18,6 +18,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { z } from 'zod';
 
+import { listAgents } from './agents.ts';
 import {
   beginLogin,
   chooseWorkspace,
@@ -288,6 +289,7 @@ export async function startStudio(options: {
     if (!path.startsWith('/api/studio')) return false;
     if (req.method === 'GET') {
       if (path === '/api/studio') json(res, 200, await status());
+      else if (path === '/api/studio/agents') json(res, 200, { agents: await listAgents(root) });
       else if (path === '/api/studio/cloud/workspaces') {
         json(res, 200, { workspaces: await listWorkspaces() });
       } else problem(res, 404, 'Not found');
