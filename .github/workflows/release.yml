@@ -24,7 +24,7 @@ jobs:
     # A manual run can target any branch, so only `main` may publish.
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       # No `registry-url`: an npm token from setup-node, even an empty one,
       # stops `npm publish` from trying the OIDC exchange.
