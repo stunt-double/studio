@@ -71,6 +71,9 @@ const STANDALONE = [
   'credentials.ts',
   'cloud.ts',
   'studio.ts',
+  'setup-draft.ts',
+  'setup-routes.ts',
+  'setup.ts',
   'open-browser.ts',
 ];
 
@@ -90,10 +93,15 @@ test('the MCP server never reaches the model client, the keys, the Studio or a p
   }
 });
 
-test('only the standalone runner imports the model client', async () => {
+test('only the standalone runner and the setup drafter import the model client', async () => {
   for (const { file, text } of await sources()) {
     const imports = localImports(text, file);
-    if (imports.includes('model.ts')) assert.equal(file, 'runner.ts', `${file} imports model.ts`);
+    if (imports.includes('model.ts')) {
+      assert.ok(['runner.ts', 'setup-draft.ts'].includes(file), `${file} imports model.ts`);
+    }
+    // The drafter is reached only from the Studio's setup routes.
+    if (imports.includes('setup-draft.ts')) assert.equal(file, 'setup-routes.ts', file);
+    if (imports.includes('setup-routes.ts')) assert.equal(file, 'studio.ts', file);
     // And the runner is reached only from the Studio and the CLI's `run`.
     if (imports.includes('runner.ts')) assert.ok(['studio.ts', 'cli.ts'].includes(file), file);
   }
@@ -148,7 +156,13 @@ test('nothing starts claude, and the one process started is the browser opener',
 test('no Claude credentials, config or login are read, and keys come from one module', async () => {
   for (const { file, text } of await sources()) {
     assert.doesNotMatch(text, /CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_AUTH_TOKEN/, file);
-    assert.doesNotMatch(text, /['"`/\\]\.claude\b/, `${file} touches ~/.claude`);
+    // studio-setup.js runs in the browser and cannot read a file: it only names the two
+    // project files it tells the person to edit themselves, so those names are let through.
+    const shown =
+      file === 'studio-setup.js'
+        ? text.replaceAll('.claude/settings.local.json', '').replaceAll('.claude/settings.json', '')
+        : text;
+    assert.doesNotMatch(shown, /['"`/\\]\.claude\b/, `${file} touches ~/.claude`);
     // Nor Codex's: its config and sign-in (auth.json) are the person's own.
     assert.doesNotMatch(text, /['"`]\.codex['"`]|auth\.json|CODEX_HOME|\/\.codex\/auth/, file);
     assert.doesNotMatch(text, /keychain|find-generic-password/i, file);

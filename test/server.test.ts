@@ -81,10 +81,14 @@ test('no key, a wrong key or a wrong cookie is refused', async () => {
   assert.equal((await get('/api/runs')).status, 403);
   assert.equal((await get('/?t=not-the-key')).status, 403);
   assert.equal((await get('/api/runs', { Cookie: `stuntdouble_${ui.port}=guess` })).status, 403);
-  // The identity probe answers anyone on the right Host, and says nothing else.
+  // The identity probe answers anyone on the right Host, and says nothing else: a short hash
+  // of the project (so the MCP server can tell whose viewer it is), never the folder.
   const probe = await get('/__stuntdouble');
   assert.equal(probe.status, 200);
-  assert.deepEqual(JSON.parse(probe.body), { stuntdouble: true });
+  const body = JSON.parse(probe.body);
+  assert.deepEqual(Object.keys(body).sort(), ['project', 'stuntdouble']);
+  assert.equal(body.stuntdouble, true);
+  assert.match(body.project, /^[0-9a-f]{12}$/);
 });
 
 test('a foreign Host header is refused, key or not', async () => {

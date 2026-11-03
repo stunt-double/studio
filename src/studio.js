@@ -270,59 +270,21 @@
   }
 
   // ── Onboarding ────────────────────────────────────────────────────────────
-  function renderWelcome() {
-    const notice = noticeBox();
-    const url = input({
-      name: 'url',
-      type: 'url',
-      placeholder: 'http://localhost:3000',
-      autocomplete: 'url',
-      required: true,
-    });
-    const submit = h(
-      'button',
-      { type: 'submit', class: 'btn primary' },
-      h('span', {}, 'Create the project')
-    );
-    const form = h(
-      'form',
-      {
-        class: 'form',
-        novalidate: true,
-        onsubmit: async (event) => {
-          event.preventDefault();
-          const done = pending(submit, 'Creating');
-          const res = await send('POST', '/api/studio/init', { url: url.value.trim() });
-          done();
-          if (res.ok) {
-            await refresh();
-            go('/checklists/' + res.data.checklist);
-          } else
-            showErrors(form, res.data.issues || [{ path: '', message: res.data.error }], notice);
-        },
-      },
-      notice,
-      h(
-        'div',
-        { class: 'form-section' },
-        field('Address to test', url, {
-          path: 'url',
-          hint: 'Localhost works: the browser runs on this machine.',
-        })
-      ),
-      h('div', { class: 'form-actions' }, submit)
-    );
-    return [
-      pageHeader({
-        title: 'Test your product with an AI actor',
-        description:
-          'Studio keeps actors, checklists and runs as files in .stuntdouble/, in ' +
-          status.project +
-          '. Give it an address and it writes a first-time visitor and a first checklist to start from.',
-      }),
-      h('div', { class: 'stack' }, form),
-    ];
-  }
+  // The guided setup lives in studio-setup.js, served right after this file.
+  const renderWelcome = () => sd.renderSetup();
+  sd.studio = {
+    field,
+    input,
+    textarea,
+    select,
+    send,
+    refresh,
+    go,
+    pending,
+    showErrors,
+    noticeBox,
+    status: () => status,
+  };
 
   // ── Lists ─────────────────────────────────────────────────────────────────
   function cloudBadge(cloud) {
@@ -1820,9 +1782,9 @@
       render: async (path) => {
         if (!status) await refresh();
         // No project yet: everything but Settings starts with setting one up.
-        if (!status.initialised && path !== '/settings') {
+        if ((!status.initialised || sd.setupOpen?.()) && path !== '/settings') {
           await refresh();
-          if (!status.initialised) return renderWelcome();
+          if (!status.initialised || sd.setupOpen?.()) return renderWelcome();
         }
         return view(path.match(pattern));
       },

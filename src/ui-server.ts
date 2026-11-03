@@ -27,6 +27,7 @@ import {
   writeFileAtomic,
   type Run,
 } from './files.ts';
+import { projectId } from './studio-link.ts';
 
 export const FIRST_PORT = 4747;
 const PORT_TRIES = 20;
@@ -176,7 +177,9 @@ export async function startUi(options: {
       return send(res, 403, 'Forbidden');
     }
     const url = new URL(req.url ?? '/', `http://${host}`);
-    if (url.pathname === '/__stuntdouble') return json(res, { stuntdouble: true });
+    if (url.pathname === '/__stuntdouble') {
+      return json(res, { stuntdouble: true, project: projectId(root) });
+    }
     // Browsers ask for it unprompted; there is none, and that is not an error.
     if (url.pathname === '/favicon.ico') return send(res, 204, '');
     if (extension && url.pathname === '/oauth/callback' && req.method === 'GET') {
@@ -328,7 +331,9 @@ export async function startUi(options: {
   let watcher: FSWatcher | null = null;
   let pending = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  // Tried again on each new page: the Studio creates .stuntdouble/ after starting.
+  // Tried again on each new page, and every quarter second until it works: the
+  // Studio creates .stuntdouble/ after starting, while a page is already open.
+  let retry: ReturnType<typeof setInterval> | undefined;
   ensureWatch = () => {
     if (watcher) return;
     try {
@@ -342,8 +347,18 @@ export async function startUi(options: {
           timer = undefined;
         }, 150);
       });
+      if (retry) {
+        clearInterval(retry);
+        retry = undefined;
+        // Whatever was written before the watch began: have open pages look again.
+        for (const client of clients) client.write(`data: ${JSON.stringify({ paths: ['.'] })}\n\n`);
+      }
     } catch {
-      // No .stuntdouble/ yet: the viewer shows the empty state without live updates.
+      // No .stuntdouble/ yet: the viewer shows the empty state until it exists.
+      if (!retry) {
+        retry = setInterval(ensureWatch, 250);
+        retry.unref();
+      }
     }
   };
   ensureWatch();
@@ -354,6 +369,7 @@ export async function startUi(options: {
     link: (path = '/') => `http://127.0.0.1:${port}${path}?t=${token}`,
     close: async () => {
       watcher?.close();
+      clearInterval(retry);
       clearTimeout(timer);
       for (const client of clients) client.end();
       server.closeAllConnections();

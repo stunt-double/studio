@@ -37,7 +37,15 @@ npx stuntdouble login                # sign in for cloud runs (--workspace <slug
 npx stuntdouble logout
 ```
 
-A project with no `.stuntdouble/` yet starts with one question, the address to test, and gets a first-time visitor and a first checklist to edit. The editors check every field with the same schemas a run reads the files with and show what to fix beside the field.
+A project with no `.stuntdouble/` yet starts with a short guided setup on one page, which does what `/stuntdouble setup` does in Claude Code:
+
+1. **Your app.** Studio reads `package.json` (the `dev`, `start` or `preview` script, a port flag, or the framework's default port) and shows, for example, "Next.js, `pnpm dev`, http://localhost:3000" with an edit field. It asks that one address whether the app is answering, and says plainly which command starts it if not.
+2. **What it found.** The pages, read from the project's files (`app/`, `pages/`, `src/routes/`, `config/routes.rb`, `urls.py`, `routes/web.php`, or folders with an `index.html`), and who the product is for, from the README and one line from you.
+3. **A draft.** With a model connection, one call drafts an actor and two to four checklists of 3 to 8 pass/fail checks (checked against the schemas, retried once if invalid, with the cost shown when known). Without one, templates for the sign-up, pricing, checkout and home pages you have, which you edit.
+4. **A preview.** Every file is shown, and editable, before anything is written: `stuntdouble.json`, the actor, the checklists and the `.gitignore` line. Studio writes only these, only under `.stuntdouble/`, and never through a symlink. It does not edit your `CLAUDE.md` or `.claude/settings.json`: it shows the two lines to add, with copy buttons.
+5. **A first run**, locally, in the cloud, or in Claude Code.
+
+Your coding agent can do the same: the setup shows the prompt to paste for Claude Code or Codex, and Studio picks the files up when they appear. The editors check every field with the same schemas a run reads the files with and show what to fix beside the field.
 
 **Connection.** Set it in Settings: Anthropic (default model `claude-opus-5-5`, or `ANTHROPIC_API_KEY` from the environment) or an OpenAI-compatible endpoint with its model and key (`OPENAI_API_KEY` works too; Ollama and LM Studio on this machine need none). The key is kept in `~/.stuntdouble/credentials.json`, readable by you only, never in the project, never in a log and never sent to the page, which hears only whether a key is set. Test connection makes one short call.
 
@@ -52,6 +60,8 @@ npx stuntdouble mcp          # the MCP server over stdio; your agent starts this
 npx stuntdouble view [dir]   # the viewer over a project's .stuntdouble/, no agent needed
 npx stuntdouble doctor       # Node, Chrome, the viewer port, the project, and how local runs are billed
 ```
+
+While Studio is open for a project, `start_run`, `finish_run` and `open_ui` link Studio's own run page instead of starting a second viewer on another port. Studio records its address in `.stuntdouble/.live/studio.json` (mode 0600, like `server.json`) and removes it on exit; the MCP server uses it only if that process is alive and its port answers as the same project.
 
 To add it to another MCP client, run `npx -y stuntdouble mcp` with `STUNTDOUBLE_PROJECT_DIR` set to the project folder (the current directory otherwise).
 
@@ -100,7 +110,7 @@ Everything lives in `.stuntdouble/` in your project, and everything but `.live/`
   actors/<slug>.json        name, description, system_prompt, knowledge, persist_login
   checklists/<slug>.json    name, actor, url, instructions, checks (each with a stable key), pass_threshold, ...
   runs/<stamp>-<checklist>/ run.json, activity.jsonl, shots/<check>.png
-  .live/                    the viewer's address and key, the latest frame, the stop flag
+  .live/                    the viewer's address and key, Studio's address and key (studio.json), the latest frame, the stop flag
 ```
 
 Actors and checklists use the same fields, and the same limits, as the Stunt Double MCP server's `create_actor` and `create_checklist`, so the same files run in the cloud. The exception is `browser_config` (a preset, viewport, touch or locale), which the cloud inputs do not take yet, so a cloud run uses the default desktop browser. A local run swaps the checklist URL's origin for `local_base_url`, so one checklist covers `localhost` here and the public address there.

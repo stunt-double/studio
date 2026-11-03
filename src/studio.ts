@@ -13,7 +13,7 @@
 // here also needs this server's own Origin and a JSON body, so neither another
 // site nor a plain form can make one.
 
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, rm, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -39,6 +39,8 @@ import {
 import { ActorSchema, ChecklistSchema, sdDir, writeFileAtomic, writeJsonAtomic } from './files.ts';
 import { LocalSession, type Launch } from './run.ts';
 import { DEFAULT_LIMITS, startStandaloneRun, testConnection, type RunUsage } from './runner.ts';
+import { setupRoutes } from './setup-routes.ts';
+import { studioRecord } from './studio-link.ts';
 import { send, startUi, type UiServer } from './ui-server.ts';
 
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
@@ -170,7 +172,41 @@ export async function startStudio(options: {
   let session: LocalSession | null = null;
   const cloudJobs = new Map<string, Job>();
 
+  const setup = setupRoutes({
+    project,
+    fetch: options.fetch,
+    connection: async () => {
+      const connection = await resolveConnection();
+      return usable(connection) ? connection : null;
+    },
+    written: () => register(),
+  });
+
+  /**
+   * Record this Studio in `.live/studio.json` once the project is set up, so
+   * the MCP server links this viewer instead of starting a second one. Same
+   * shape and mode as `.live/server.json`; `.gitignore` keeps `.live/` out of git.
+   */
+  let registered = false;
+  async function register(): Promise<void> {
+    if (!(await exists(join(root, 'stuntdouble.json')))) return;
+    const file = studioRecord(root);
+    if (registered && (await exists(file))) return;
+    if (!(await exists(join(root, '.gitignore')))) {
+      await writeFileAtomic(join(root, '.gitignore'), '.live/\n');
+    }
+    await writeJsonAtomic(file, {
+      url: `http://127.0.0.1:${ui.port}`,
+      port: ui.port,
+      pid: process.pid,
+      token: ui.token,
+    });
+    registered = true;
+  }
+
   async function status() {
+    // An agent may have written the project files since Studio started.
+    await register().catch(() => {});
     return {
       project,
       initialised: await exists(join(root, 'stuntdouble.json')),
@@ -282,8 +318,11 @@ export async function startStudio(options: {
   async function handle(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     const path = url.pathname;
     if (path === '/studio.js' && req.method === 'GET') {
-      const script = await readFile(new URL('./studio.js', import.meta.url));
-      send(res, 200, script, 'text/javascript; charset=utf-8');
+      // The views, then the setup flow that builds on their helpers.
+      const scripts = await Promise.all(
+        ['./studio.js', './studio-setup.js'].map((f) => readFile(new URL(f, import.meta.url)))
+      );
+      send(res, 200, Buffer.concat(scripts), 'text/javascript; charset=utf-8');
       return true;
     }
     if (!path.startsWith('/api/studio')) return false;
@@ -292,7 +331,7 @@ export async function startStudio(options: {
       else if (path === '/api/studio/agents') json(res, 200, { agents: await listAgents(root) });
       else if (path === '/api/studio/cloud/workspaces') {
         json(res, 200, { workspaces: await listWorkspaces() });
-      } else problem(res, 404, 'Not found');
+      } else if (!(await setup.get(path, res))) problem(res, 404, 'Not found');
       return true;
     }
     // Writes: only from this server's own page.
@@ -313,6 +352,7 @@ export async function startStudio(options: {
     }
     const definition = path.match(/^\/api\/studio\/(actors|checklists)\/([^/]+)$/);
     try {
+      if (req.method === 'POST' && (await setup.post(path, body, res))) return true;
       if (definition && req.method === 'PUT') {
         await saveDefinition(
           res,
@@ -406,10 +446,18 @@ export async function startStudio(options: {
     },
   });
 
+  await register().catch(() => {});
+
   return {
     ui,
     link: (path) => ui.link(path),
     close: async () => {
+      // Leave no record behind, unless a newer Studio has since written its own.
+      const record = studioRecord(root);
+      const mine = await readFile(record, 'utf8')
+        .then((t) => (JSON.parse(t) as { pid?: number }).pid === process.pid)
+        .catch(() => false);
+      if (mine) await rm(record, { force: true });
       await session?.close().catch(() => {});
       await ui.close();
     },
