@@ -44,7 +44,7 @@ jobs:
       # pull request. Merging it runs this again with nothing pending, and
       # `pnpm release` builds, publishes the new version to npm, tags it and
       # creates its GitHub release.
-      - uses: changesets/action@v1
+      - uses: changesets/action@v2
         with:
           version: pnpm version-packages
           publish: pnpm release
