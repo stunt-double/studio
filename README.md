@@ -1,8 +1,23 @@
-# stuntdouble
+# Stunt Double Studio
 
-[![npm](https://img.shields.io/npm/v/stuntdouble.svg)](https://www.npmjs.com/package/stuntdouble) [![License](https://img.shields.io/npm/l/stuntdouble.svg)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/stuntdouble.svg)](https://www.npmjs.com/package/stuntdouble) [![CI](https://github.com/stunt-double/studio/actions/workflows/ci.yml/badge.svg)](https://github.com/stunt-double/studio/actions/workflows/ci.yml) [![Licence](https://img.shields.io/npm/l/stuntdouble.svg)](./LICENSE)
 
-Run [Stunt Double](https://stuntdouble.io) checklists in a Chrome on your own machine, with every run kept as files in your project. Two ways in:
+See your app fail the way a real person would, before anyone else does. Studio puts an AI actor in a Chrome on your machine, sends it through your app with a checklist, and keeps every verdict, screenshot and step as files in your project.
+
+```sh
+npx stuntdouble studio
+```
+
+Studio opens in your browser. Give it the address to test and it starts you with a first-time visitor and a first checklist to edit. Run the checklist, watch the actor work through it live, stop it whenever you like and read the verdicts. A passed check has to cite something on the page, so every pass comes with its evidence.
+
+- **Your model, your machine.** Runs use a connection you set: an Anthropic API key, or an OpenAI-compatible endpoint such as OpenAI, OpenRouter, Ollama or LM Studio. Your key stays in `~/.stuntdouble/credentials.json`.
+- **Files you can commit.** Actors, checklists and runs live in `.stuntdouble/`, in the same format the [Stunt Double](https://stuntdouble.io) cloud reads.
+- **The same score as the cloud.** A local run is scored by the code that scores a cloud run, and signed in, the same checklist runs in your Stunt Double workspace too.
+- **Inside your coding agent.** The same package is an MCP server, so Claude Code or any MCP client can run a checklist with its own session as the actor.
+
+This repository is the npm package [`stuntdouble`](https://www.npmjs.com/package/stuntdouble). It needs Node 22.18 or later and Google Chrome (or Playwright's Chromium, from `npx playwright install chromium`).
+
+## Two ways in
 
 - **Stunt Double Studio**, a local app: `npx stuntdouble studio` opens it in your browser. Create and edit actors and checklists, run one with an AI actor on your own model connection, watch it live, stop it and review the verdicts. Signed in to Stunt Double, the same checklist also runs in the cloud.
 - **Stunt Double Local** inside your coding agent: an MCP server, which the Stunt Double plugin for Claude Code starts for you (`/stuntdouble setup`, then `/stuntdouble run <checklist>`).
@@ -44,14 +59,14 @@ Needs Node 22.18 or later and Google Chrome (or Playwright's Chromium, from `npx
 
 ## Tools
 
-| Tool                                                                                                           | What it does                                                                                                                                                                                                                          |
-| -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `navigate`, `read_page`, `find`, `get_page_text`, `click`, `type`, `form_input`, `key`, `scroll`, `screenshot` | The direct tools from [`@stuntkit/browser-toolset`](../browser-toolset). Screenshots go back to the model only from `screenshot`, unless `model_screenshots` is `every_action`.                                                       |
-| `start_run`                                                                                                    | Validates the files (naming every field to fix), opens a fresh Chrome at the checklist's URL and returns the viewer link, the actor's brief and the checks. `resume` continues an interrupted run, or one still open in this session. |
-| `evaluate_check`                                                                                               | Records one verdict. A pass must cite text or a selector that is on the page now. Scrolls the evidence into view and saves `shots/<check>.png`.                                                                                       |
-| `finish_run`                                                                                                   | Settles the checks left, scores the run and closes the browser.                                                                                                                                                                       |
-| `open_ui`                                                                                                      | The viewer's link, and a line on each of the five latest runs: checklist, status, outcome, checks passed and when it started.                                                                                                         |
-| `doctor`                                                                                                       | Read only. The same lines as `npx stuntdouble doctor`, one per check (`ok`, `FAIL`, `note` or `--`), so an agent can run it without a shell. While the viewer runs, it reports the viewer's port rather than probing 4747.            |
+| Tool                                                                                                           | What it does                                                                                                                                                                                                                             |
+| -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `navigate`, `read_page`, `find`, `get_page_text`, `click`, `type`, `form_input`, `key`, `scroll`, `screenshot` | The direct tools from [`@stuntkit/browser-toolset`](https://github.com/stunt-double/stuntkit/tree/main/packages/browser-toolset). Screenshots go back to the model only from `screenshot`, unless `model_screenshots` is `every_action`. |
+| `start_run`                                                                                                    | Validates the files (naming every field to fix), opens a fresh Chrome at the checklist's URL and returns the viewer link, the actor's brief and the checks. `resume` continues an interrupted run, or one still open in this session.    |
+| `evaluate_check`                                                                                               | Records one verdict. A pass must cite text or a selector that is on the page now. Scrolls the evidence into view and saves `shots/<check>.png`.                                                                                          |
+| `finish_run`                                                                                                   | Settles the checks left, scores the run and closes the browser.                                                                                                                                                                          |
+| `open_ui`                                                                                                      | The viewer's link, and a line on each of the five latest runs: checklist, status, outcome, checks passed and when it started.                                                                                                            |
+| `doctor`                                                                                                       | Read only. The same lines as `npx stuntdouble doctor`, one per check (`ok`, `FAIL`, `note` or `--`), so an agent can run it without a shell. While the viewer runs, it reports the viewer's port rather than probing 4747.               |
 
 ## Files
 
@@ -80,6 +95,10 @@ A checklist with no `weighted` checks has no score: it passes only when every pa
 - With `safety` at `third_party` (the default), on any other host the tools refuse to pay, subscribe, create an account or type a password or card number. Set it to `off` when your app signs in on another domain.
 - The viewer listens on `127.0.0.1` only (port 4747, or the next free one), answers only to its own Host header, needs the key from the printed link (kept as an HttpOnly, SameSite=Strict cookie), sends no CORS headers and serves files from `.stuntdouble/` only. Its one control is Stop.
 - Studio is the same server with more on it, and keeps every one of those rules. Each write also needs Studio's own `Origin` and a JSON body. Values from files and replies are shown as text, and only `http(s)` addresses become links. The OAuth callback is the one route without the key: it answers only a sign-in this process started.
+
+## Contributing
+
+Issues and pull requests are welcome: see [CONTRIBUTING.md](./CONTRIBUTING.md), and report security problems privately as [SECURITY.md](./SECURITY.md) describes.
 
 ## Licence
 
