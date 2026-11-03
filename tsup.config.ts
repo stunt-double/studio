@@ -14,5 +14,6 @@ export default defineConfig({
   onSuccess: async () => {
     await copyFile('src/ui.html', 'dist/ui.html');
     await copyFile('src/studio.js', 'dist/studio.js');
+    await copyFile('src/studio-setup.js', 'dist/studio-setup.js');
   },
 });

@@ -44,6 +44,7 @@ import {
   writeFileAtomic,
   writeJsonAtomic,
 } from './files.ts';
+import { findStudio, studioLink } from './studio-link.ts';
 import { startUi, type UiServer } from './ui-server.ts';
 import { resolveSkippedChecks } from './vendor/scoring/conditions.ts';
 import { resolveHaltedChecks } from './vendor/scoring/failure.ts';
@@ -147,6 +148,11 @@ export class LocalSession {
 
   /** The viewer's address, starting it on first use. */
   async openUi(path = '/'): Promise<string> {
+    // A Studio open for this project is the one viewer: link it, start nothing.
+    if (!this.sharedUi) {
+      const studio = await findStudio(this.root);
+      if (studio) return studioLink(studio, path);
+    }
     this.ui ??= await startUi({ root: this.root });
     await writeJsonAtomic(join(this.root, '.live', 'server.json'), {
       port: this.ui.port,
