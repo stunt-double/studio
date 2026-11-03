@@ -65,6 +65,27 @@ While Studio is open for a project, `start_run`, `finish_run` and `open_ui` link
 
 To add it to another MCP client, run `npx -y stuntdouble mcp` with `STUNTDOUBLE_PROJECT_DIR` set to the project folder (the current directory otherwise).
 
+### Connecting agents
+
+Your coding agent connects to Studio as an MCP client; Studio never starts it, never reads its sign-in and never uses its plan. Settings, Agents shows each one as Connected (with its version) or Not connected, with the setup to copy.
+
+```sh
+# Claude Code
+claude plugin marketplace add stunt-double/stuntdouble-mcp
+claude plugin install stuntdouble@stuntdouble
+
+# Codex (the same as this block in ~/.codex/config.toml: [mcp_servers.stuntdouble],
+# command = "npx", args = ["-y", "stuntdouble", "mcp"], env = { STUNTDOUBLE_PROJECT_DIR = "..." })
+codex mcp add stuntdouble --env STUNTDOUBLE_PROJECT_DIR=/path/to/project -- npx -y stuntdouble mcp
+
+# Any other MCP client
+STUNTDOUBLE_PROJECT_DIR=/path/to/project npx -y stuntdouble mcp
+```
+
+On `initialize` the server reads the client's name and version and writes `.stuntdouble/.live/agents/<pid>.json` (never committed), removing it on exit; Studio ignores an entry whose process has died. `claude-code` shows as Claude Code, `codex-mcp-client` as Codex, and anything else as "MCP client <name>".
+
+To hand a run to a connected agent, pick **In Claude Code** or **In Codex** when running a checklist. Studio shows a prompt to paste (`/stuntdouble run <checklist>` for Claude Code; a short prompt naming `start_run`, `evaluate_check` and `finish_run` for Codex), then opens the run live when it appears. A run an agent starts records it as `runner.client` (`{ name, version }`) in `run.json`, and the runs list and run page say "Claude Code", "Codex", "Local, <model>" or "Cloud".
+
 Needs Node 22.18 or later and Google Chrome (or Playwright's Chromium, from `npx playwright install chromium`).
 
 ## Tools

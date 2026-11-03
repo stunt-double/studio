@@ -130,6 +130,8 @@ export class LocalSession {
 
   /** Extra `runner` fields for a new run, such as the model a standalone run uses. */
   private readonly runnerFields: Partial<Run['runner']>;
+  /** The agent driving this session over MCP, once it has said who it is. */
+  client: Run['runner']['client'];
   /** A viewer started by someone else (the Studio): its links are used, and it is not closed here. */
   private readonly sharedUi: boolean;
 
@@ -234,6 +236,7 @@ export class LocalSession {
       await this.clearStop(entry.id);
       run = {
         ...entry.run,
+        runner: this.client ? { ...entry.run.runner, client: this.client } : entry.run.runner,
         results: entry.run.results.filter((r) => r.evidence !== NOT_JUDGED),
         status: 'running',
         pid: process.pid,
@@ -246,7 +249,13 @@ export class LocalSession {
       run = {
         format: 'stuntdouble.run/1',
         id: '',
-        runner: { ...this.runnerFields, kind: 'local', package: PACKAGE, judged: false },
+        runner: {
+          ...this.runnerFields,
+          ...(this.client ? { client: this.client } : {}),
+          kind: 'local',
+          package: PACKAGE,
+          judged: false,
+        },
         status: 'running',
         pid: process.pid,
         url: rebase(checklist.url, config.local_base_url),

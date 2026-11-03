@@ -24,11 +24,11 @@ jobs:
     # A manual run can target any branch, so only `main` may publish.
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       # No `registry-url`: an npm token from setup-node, even an empty one,
       # stops `npm publish` from trying the OIDC exchange.
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -44,7 +44,7 @@ jobs:
       # pull request. Merging it runs this again with nothing pending, and
       # `pnpm release` builds, publishes the new version to npm, tags it and
       # creates its GitHub release.
-      - uses: changesets/action@v1
+      - uses: changesets/action@v2
         with:
           version: pnpm version-packages
           publish: pnpm release
