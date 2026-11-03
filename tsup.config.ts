@@ -8,12 +8,9 @@ export default defineConfig({
   platform: 'node',
   sourcemap: true,
   clean: true,
-  // browser-toolset is on GitHub Packages, not npm: bundled from its source, so
-  // installing this package needs nothing from there.
+  // Bundled into dist, so browser-toolset stays a dev dependency and installing
+  // this package pulls in nothing more.
   noExternal: ['@stuntkit/browser-toolset'],
-  esbuildOptions(options) {
-    options.conditions = ['@stunt-double/source'];
-  },
   onSuccess: async () => {
     await copyFile('src/ui.html', 'dist/ui.html');
     await copyFile('src/studio.js', 'dist/studio.js');
