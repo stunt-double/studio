@@ -1,5 +1,27 @@
 # stuntdouble
 
+## 0.3.0
+
+### Minor Changes
+
+- [#8](https://github.com/stunt-double/studio/pull/8) [`d3d0854`](https://github.com/stunt-double/studio/commit/d3d0854e346a799ae9521bbe8d1d2a3528bec3eb) Thanks [@mrprkr](https://github.com/mrprkr)! - Studio works with coding agents. Claude Code and Codex connect as MCP clients and Settings, Agents shows which are connected, with the one-time setup to copy for each. A checklist can be run in Claude Code or Codex from the run picker: Studio shows the prompt to paste and opens the run when it appears.
+  
+  - The MCP server records the client's name and version on `initialize` under `.stuntdouble/.live/agents/` and removes it on exit.
+  - `run.json`'s `runner` gains an optional `client` (`{ name, version }`), and the runs list and run page show Claude Code, Codex, Local or Cloud.
+  - Studio still never starts an agent, never reads its sign-in and never uses its plan.
+
+- [#9](https://github.com/stunt-double/studio/pull/9) [`43297ca`](https://github.com/stunt-double/studio/commit/43297ca9f9db1b1c152bd62870fbe40441d8e8cb) Thanks [@mrprkr](https://github.com/mrprkr)! - Studio sets up a new project for you, and Claude Code and Studio share one viewer.
+  
+  - A folder with no `.stuntdouble/` opens a guided setup on one page. It finds your dev server from `package.json` (the `dev`, `start` or `preview` script, a port flag, or the framework's default port) and checks that it answers, finds your pages from the project's files, then drafts an actor and two to four checklists. With a model connection, one call drafts them from your routes, README and one line about the user, checked against the same schemas as a run and retried once if invalid, with the cost shown when known. Without one, templates for the pages you have. Every file is shown, and editable, before it is written, and Studio writes only inside `.stuntdouble/`. It shows the two lines to add to `CLAUDE.md` and `.claude/settings.local.json` instead of editing them. The setup also offers the prompt to paste into Claude Code or Codex, and ends by offering a first run.
+  - While Studio is open for a project, `start_run`, `finish_run` and `open_ui` in Claude Code link Studio's run page instead of starting a second viewer on another port. Studio records itself in `.stuntdouble/.live/studio.json` (mode 0600, like `server.json`) and removes it on exit. The MCP server uses it only when its process is alive and its port answers as the same project, and otherwise starts its own viewer as before. The `/__stuntdouble` probe now also returns a short hash identifying the project.
+  - Studio's live updates now start once `.stuntdouble/` appears, so a run begun straight after setup updates in the page without a reload.
+
+- [#11](https://github.com/stunt-double/studio/pull/11) [`bedc208`](https://github.com/stunt-double/studio/commit/bedc208d540a7ad3da7e580f02af856409293fea) Thanks [@mrprkr](https://github.com/mrprkr)! - The viewer Claude Code opens is now Stunt Double Studio, and it runs things for you instead of handing you commands to copy.
+  
+  - Run again (or Resume) in Claude Code sends the checklist to the session that opened Studio as a Claude Code channel event, then opens the run when it starts. When the session was not started with the Stunt Double channel on, Studio says so and offers the command to paste.
+  - Sign in to Stunt Double from the viewer, choose a workspace, and Run in the cloud pushes the checklist and its actor and starts a cloud run, which lands beside the local ones. The note under the buttons says what the cloud run does and what it uploads.
+  - The sign-in is the one Studio keeps in `~/.stuntdouble/credentials.json`. The MCP server may now reach that sign-in, but still never a model client or a model key (`test/no-model.test.ts`).
+
 ## 0.2.0
 
 ### Minor Changes
