@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { registerAgent, unregisterAgent } from './agents.ts';
 import { projectDir } from './files.ts';
 import { LocalSession, PACKAGE, type ToolOutput } from './run.ts';
+import { CHANNEL_INSTRUCTIONS, viewerExtension } from './viewer.ts';
 
 const reply = ({ text, image, isError }: ToolOutput): CallToolResult => ({
   content: [
@@ -61,7 +62,15 @@ function shapeOf(spec: (typeof DIRECT_TOOL_SPECS)[number]): z.ZodRawShape {
 }
 
 export function createServer(session: LocalSession): McpServer {
-  const server = new McpServer({ name: 'stuntdouble', version: PACKAGE.split('@')[1]! });
+  // A Claude Code channel, so the viewer's Run button reaches this session
+  // (viewer.ts). Other clients ignore the capability.
+  const server = new McpServer(
+    { name: 'stuntdouble', version: PACKAGE.split('@')[1]! },
+    {
+      capabilities: { experimental: { 'claude/channel': {} } },
+      instructions: CHANNEL_INSTRUCTIONS,
+    }
+  );
 
   // `done` is the toolset's end signal; here a run ends with finish_run.
   for (const spec of DIRECT_TOOL_SPECS.filter((s) => s.name !== 'done')) {
@@ -125,7 +134,7 @@ export function createServer(session: LocalSession): McpServer {
     'open_ui',
     {
       description:
-        'The local viewer for this project: every run with its verdicts, screenshots and activity, and the checklists and actors. Returns a link to open in a browser and a line on each of the latest runs.',
+        'Stunt Double Studio for this project: every run with its verdicts, screenshots and activity, and the checklists and actors. Returns a link to open in a browser and a line on each of the latest runs.',
     },
     () => attempt(() => session.overview())
   );
@@ -161,7 +170,16 @@ export function createServer(session: LocalSession): McpServer {
 }
 
 export async function serveMcp(): Promise<void> {
-  const session = new LocalSession({ project: projectDir() });
+  const project = projectDir();
+  const session: LocalSession = new LocalSession({
+    project,
+    extension: viewerExtension({
+      project,
+      client: () => session.client,
+      notify: (params) =>
+        server.server.notification({ method: 'notifications/claude/channel', params }),
+    }),
+  });
   const server = createServer(session);
   // stdin closing and the SIGTERM that follows both land here; close once.
   let closing: Promise<void> | undefined;

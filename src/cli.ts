@@ -183,7 +183,7 @@ const command = given ?? (process.stdin.isTTY && process.stdout.isTTY ? 'studio'
 // stranger. stderr lands in the MCP client's log.
 if (!nodeSupported() && command !== 'doctor') {
   process.stderr.write(
-    `Stunt Double Local needs Node ${MIN_NODE.join('.')} or later (this is ${process.versions.node}). Update Node, then try again.\n`
+    `Stunt Double Studio needs Node ${MIN_NODE.join('.')} or later (this is ${process.versions.node}). Update Node, then try again.\n`
   );
   process.exit(1);
 }

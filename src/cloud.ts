@@ -20,7 +20,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
-import { readCredentials, updateCredentials } from './credentials.ts';
+import { readCredentials, updateCredentials } from './credentials-file.ts';
 import {
   ActorSchema,
   ChecklistSchema,

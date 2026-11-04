@@ -276,7 +276,7 @@ test('studio: onboarding, editing, a run on a scripted model, and the run in the
       `${origin}/runs/${encodeURIComponent(id)}?t=${new URL(link).searchParams.get('t')}`
     );
     await page.getByRole('heading', { name: 'Shop' }).waitFor();
-    assert.ok(await page.getByText('Local, scripted, self-judged').first().isVisible());
+    assert.ok(await page.getByText('Studio, scripted, self-judged').first().isVisible());
     assert.ok(await page.getByText('Free shipping is offered').isVisible());
     assert.ok(await page.getByRole('button', { name: 'Run again' }).isVisible());
   } finally {

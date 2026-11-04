@@ -33,12 +33,12 @@ export const FIRST_PORT = 4747;
 const PORT_TRIES = 20;
 
 /**
- * What the Studio adds to the viewer (studio.ts). The viewer alone has none of
- * it: inside Claude Code it reads files and offers Stop, nothing more.
+ * What Studio (studio.ts) or the viewer Claude Code opens (viewer.ts) adds.
+ * `stuntdouble view` has none of it: it reads files and offers Stop.
  */
 export type UiExtension = {
   /** Paths beyond the viewer's own that serve the page. */
-  pages: RegExp;
+  pages?: RegExp;
   /** A script the page loads after its own, served by `handle`. */
   script: string;
   /** A signed-in request the viewer does not answer. Resolves false for a 404. */
@@ -150,7 +150,7 @@ function runSummary(root: string, run: Run, names: Map<string, string>) {
   };
 }
 
-async function readBody(req: IncomingMessage): Promise<string> {
+export async function readBody(req: IncomingMessage): Promise<string> {
   let body = '';
   for await (const chunk of req) {
     body += chunk;
@@ -218,6 +218,16 @@ export async function startUi(options: {
       await writeFileAtomic(join(root, '.live', 'stop'), entry.id);
       return send(res, 204, '');
     }
+    if (extension && req.method !== 'GET') {
+      // An extension's writes: only from this server's own page, and only as
+      // JSON, so neither another site nor a plain form can make one.
+      const refuse = (status: number, error: string) =>
+        send(res, status, JSON.stringify({ error }), 'application/json');
+      if (req.headers.origin !== `http://${host}`) return refuse(403, 'Forbidden');
+      if (!/^application\/json\b/.test(req.headers['content-type'] ?? '')) {
+        return refuse(415, 'Send JSON.');
+      }
+    }
     if (extension && (await extension.handle(req, res, url))) return;
     if (req.method !== 'GET') return send(res, 405, 'Method not allowed');
 
@@ -225,7 +235,7 @@ export async function startUi(options: {
       path === '/' ||
       path === '/definitions' ||
       /^\/runs\/[^/]+$/.test(path) ||
-      extension?.pages.test(path)
+      extension?.pages?.test(path)
     ) {
       let page = await readFile(new URL('./ui.html', import.meta.url), 'utf8');
       if (extension) {

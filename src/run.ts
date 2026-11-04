@@ -45,7 +45,7 @@ import {
   writeJsonAtomic,
 } from './files.ts';
 import { findStudio, studioLink } from './studio-link.ts';
-import { startUi, type UiServer } from './ui-server.ts';
+import { startUi, type UiExtension, type UiServer } from './ui-server.ts';
 import { resolveSkippedChecks } from './vendor/scoring/conditions.ts';
 import { resolveHaltedChecks } from './vendor/scoring/failure.ts';
 import {
@@ -134,18 +134,22 @@ export class LocalSession {
   client: Run['runner']['client'];
   /** A viewer started by someone else (the Studio): its links are used, and it is not closed here. */
   private readonly sharedUi: boolean;
+  /** What the viewer this session starts adds (viewer.ts, for an MCP session). */
+  private readonly extension: UiExtension | undefined;
 
   constructor(options: {
     project: string;
     launch?: Launch;
     runner?: Partial<Run['runner']>;
     ui?: UiServer;
+    extension?: UiExtension;
   }) {
     this.root = sdDir(options.project);
     this.launch = options.launch ?? PlaywrightDriver.launch;
     this.runnerFields = options.runner ?? {};
     this.ui = options.ui ?? null;
     this.sharedUi = Boolean(options.ui);
+    this.extension = options.extension;
   }
 
   /** The viewer's address, starting it on first use. */
@@ -155,7 +159,7 @@ export class LocalSession {
       const studio = await findStudio(this.root);
       if (studio) return studioLink(studio, path);
     }
-    this.ui ??= await startUi({ root: this.root });
+    this.ui ??= await startUi({ root: this.root, extension: this.extension });
     await writeJsonAtomic(join(this.root, '.live', 'server.json'), {
       port: this.ui.port,
       token: this.ui.token,

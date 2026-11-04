@@ -9,9 +9,8 @@
 // never imports this module, so inside Claude Code nothing here runs.
 //
 // The security model is the viewer's (ui-server.ts): loopback only, the
-// per-start key cookie, the Host check on every request, no CORS. Every write
-// here also needs this server's own Origin and a JSON body, so neither another
-// site nor a plain form can make one.
+// per-start key cookie, the Host check on every request, no CORS, and every
+// write needs this server's own Origin and a JSON body.
 
 import { readFile, rm, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -19,16 +18,8 @@ import { join } from 'node:path';
 import { z } from 'zod';
 
 import { listAgents } from './agents.ts';
-import {
-  beginLogin,
-  chooseWorkspace,
-  CloudRefusal,
-  cloudStatus,
-  completeLogin,
-  listWorkspaces,
-  logout,
-  startCloudRun,
-} from './cloud.ts';
+import { cloudRoutes } from './cloud-routes.ts';
+import { CloudRefusal, cloudStatus, startCloudRun } from './cloud.ts';
 import {
   connectionStatus,
   PROVIDERS,
@@ -181,6 +172,7 @@ export async function startStudio(options: {
     },
     written: () => register(),
   });
+  const cloud = cloudRoutes({ back: '/settings' });
 
   /**
    * Record this Studio in `.live/studio.json` once the project is set up, so
@@ -329,18 +321,9 @@ export async function startStudio(options: {
     if (req.method === 'GET') {
       if (path === '/api/studio') json(res, 200, await status());
       else if (path === '/api/studio/agents') json(res, 200, { agents: await listAgents(root) });
-      else if (path === '/api/studio/cloud/workspaces') {
-        json(res, 200, { workspaces: await listWorkspaces() });
-      } else if (!(await setup.get(path, res))) problem(res, 404, 'Not found');
-      return true;
-    }
-    // Writes: only from this server's own page.
-    if (req.headers.origin !== `http://${req.headers.host}`) {
-      problem(res, 403, 'Forbidden');
-      return true;
-    }
-    if (!/^application\/json\b/.test(req.headers['content-type'] ?? '')) {
-      problem(res, 415, 'Send JSON.');
+      else if (!(await cloud.get(path, res)) && !(await setup.get(path, res))) {
+        problem(res, 404, 'Not found');
+      }
       return true;
     }
     let body: unknown;
@@ -352,7 +335,12 @@ export async function startStudio(options: {
     }
     const definition = path.match(/^\/api\/studio\/(actors|checklists)\/([^/]+)$/);
     try {
-      if (req.method === 'POST' && (await setup.post(path, body, res))) return true;
+      if (
+        req.method === 'POST' &&
+        ((await setup.post(path, body, res)) || (await cloud.post(path, body, res, ui.port)))
+      ) {
+        return true;
+      }
       if (definition && req.method === 'PUT') {
         await saveDefinition(
           res,
@@ -392,15 +380,6 @@ export async function startStudio(options: {
             ? await testConnection(connection, options.fetch)
             : { ok: false, message: 'There is no key for this connection yet.' }
         );
-      } else if (path === '/api/studio/cloud/login') {
-        json(res, 200, { url: await beginLogin(`http://127.0.0.1:${ui.port}/oauth/callback`) });
-      } else if (path === '/api/studio/cloud/logout') {
-        await logout();
-        json(res, 200, await cloudStatus());
-      } else if (path === '/api/studio/cloud/workspace') {
-        const id = (body as { id?: unknown }).id;
-        if (typeof id !== 'string') problem(res, 400, 'Name a workspace.');
-        else json(res, 200, { workspace: await chooseWorkspace(id) });
       } else {
         problem(res, 404, 'Not found');
       }
@@ -411,30 +390,6 @@ export async function startStudio(options: {
     return true;
   }
 
-  async function oauthCallback(_req: IncomingMessage, res: ServerResponse, url: URL) {
-    const state = url.searchParams.get('state') ?? '';
-    const code = url.searchParams.get('code');
-    let message = 'Signed in to Stunt Double.';
-    let ok = true;
-    try {
-      if (!code)
-        throw new Error(url.searchParams.get('error_description') ?? 'Sign-in was cancelled.');
-      await completeLogin(state, code);
-    } catch (err) {
-      ok = false;
-      message = (err as Error).message;
-    }
-    const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-    // A same-origin navigation from here carries the Strict cookie again.
-    send(
-      res,
-      ok ? 200 : 400,
-      `<!doctype html><meta charset="utf-8"><title>Stunt Double Studio</title>${ok ? '<meta http-equiv="refresh" content="1;url=/settings">' : ''}<body style="font:15px system-ui;padding:3rem;max-width:32rem"><p>${escape(message)}</p><p><a href="/settings">Back to the Studio</a></p></body>`,
-      'text/html; charset=utf-8',
-      { 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'" }
-    );
-  }
-
   const ui = await startUi({
     root,
     port: options.port,
@@ -442,7 +397,7 @@ export async function startStudio(options: {
       pages: /^\/(checklists|actors|settings)(\/[^/]+(\/run)?)?$/,
       script: '/studio.js',
       handle,
-      oauthCallback,
+      oauthCallback: cloud.oauthCallback,
     },
   });
 
