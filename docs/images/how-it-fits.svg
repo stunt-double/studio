@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 330" width="880" height="330" role="img" aria-labelledby="t d">
+  <title id="t">How Stunt Double Studio fits together</title>
+  <desc id="d">Your coding agent (through npx stuntdouble mcp) and Stunt Double Studio (through npx stuntdouble studio) both read and write the same .stuntdouble/ folder in your project, and both drive Chrome on your machine.</desc>
+  <style>
+    .bg { fill: #F8FAFD; }
+    .box { fill: #FFFFFF; stroke: #D3D8DE; stroke-width: 1.5; }
+    .hub { fill: #FFFFFF; stroke: #3555E5; stroke-width: 2; }
+    .h { font: 600 17px system-ui, -apple-system, 'Segoe UI', sans-serif; fill: #0E1119; }
+    .p { font: 400 14px system-ui, -apple-system, 'Segoe UI', sans-serif; fill: #545862; }
+    .m { font: 400 13px ui-monospace, 'SF Mono', Menlo, monospace; fill: #0E1119; }
+    .hm { font: 600 17px ui-monospace, 'SF Mono', Menlo, monospace; fill: #3555E5; }
+    .l { font: 400 12px system-ui, -apple-system, 'Segoe UI', sans-serif; fill: #545862; }
+    .line { stroke: #545862; stroke-width: 1.5; fill: none; }
+    .head { fill: #545862; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #07090F; }
+      .box { fill: #0E1119; stroke: rgb(235 239 242 / .13); }
+      .hub { fill: #0E1119; stroke: #7E8CFC; }
+      .h, .m { fill: #EBEFF2; }
+      .p, .l { fill: #9299A1; }
+      .hm { fill: #7E8CFC; }
+      .line { stroke: #9299A1; }
+      .head { fill: #9299A1; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="head" d="M0 0L10 5L0 10z"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="880" height="330" rx="12"/>
+
+  <rect class="box" x="20" y="30" width="250" height="120" rx="10"/>
+  <text class="h" x="40" y="64">Your coding agent</text>
+  <text class="p" x="40" y="90">Claude Code, Codex or any</text>
+  <text class="p" x="40" y="109">MCP client</text>
+  <text class="m" x="40" y="134">npx stuntdouble mcp</text>
+
+  <rect class="hub" x="315" y="30" width="250" height="120" rx="10"/>
+  <text class="hm" x="335" y="64">.stuntdouble/</text>
+  <text class="p" x="335" y="90">Actors, checklists and runs,</text>
+  <text class="p" x="335" y="109">with every screenshot</text>
+  <text class="m" x="335" y="134">files in your project</text>
+
+  <rect class="box" x="610" y="30" width="250" height="120" rx="10"/>
+  <text class="h" x="630" y="64">Stunt Double Studio</text>
+  <text class="p" x="630" y="90">Setup, editing, live view</text>
+  <text class="p" x="630" y="109">and results</text>
+  <text class="m" x="630" y="134">npx stuntdouble studio</text>
+
+  <path class="line" d="M274 90H311" marker-start="url(#a)" marker-end="url(#a)"/>
+  <path class="line" d="M569 90H606" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text class="l" x="440" y="174" text-anchor="middle">Both read and write the same files</text>
+
+  <rect class="box" x="20" y="230" width="840" height="76" rx="10"/>
+  <text class="h" x="440" y="264" text-anchor="middle">Chrome on your machine</text>
+  <text class="p" x="440" y="288" text-anchor="middle">The actor drives it through your app, one fresh profile per run</text>
+
+  <path class="line" d="M145 154V226" marker-end="url(#a)"/>
+  <path class="line" d="M735 154V226" marker-end="url(#a)"/>
+  <text class="l" x="155" y="208">your agent's session is the actor</text>
+  <text class="l" x="725" y="208" text-anchor="end">your model connection is the actor</text>
+</svg>
