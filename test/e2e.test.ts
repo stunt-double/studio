@@ -280,5 +280,5 @@ test('a checklist runs end to end over MCP in headless Chrome', { timeout: 60_00
   assert.equal(listed!.results, undefined);
   assert.equal((await fetch(`${origin}/favicon.ico`)).status, 204);
   const page = await fetch(`${origin}/runs/${id}`, { headers: { Cookie: cookie } });
-  assert.match(await page.text(), /<title>Stunt Double Local<\/title>/);
+  assert.match(await page.text(), /<title>Stunt Double Studio<\/title>/);
 });

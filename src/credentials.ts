@@ -1,18 +1,16 @@
-// The Studio's secrets: the person's own model connection and their Stunt
-// Double sign-in, in `~/.stuntdouble/credentials.json` (mode 0600), never in
-// the project's `.stuntdouble/`, never in a log and never sent to the page.
+// The person's own model connection, kept in `~/.stuntdouble/credentials.json`
+// beside their Stunt Double sign-in, never in the project's `.stuntdouble/`,
+// never in a log and never sent to the page.
 //
 // Policy line: a standalone run uses only a connection the person configures,
 // an Anthropic API key or an OpenAI-compatible endpoint. Nothing here reads a
 // Claude subscription, `~/.claude` or Claude Code's credentials. Only the
 // Studio (studio.ts, cli.ts) imports this module; the MCP server never does
-// (test/no-model.test.ts).
+// (test/no-model.test.ts). The file itself is credentials-file.ts.
 
-import { randomUUID } from 'node:crypto';
-import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { z } from 'zod';
+
+import { readCredentials, updateCredentials } from './credentials-file.ts';
 
 export const PROVIDERS = ['anthropic', 'openai'] as const;
 export type Provider = (typeof PROVIDERS)[number];
@@ -39,59 +37,6 @@ const ConnectionSchema = z.object({
 });
 export type StoredConnection = z.infer<typeof ConnectionSchema>;
 
-const CredentialsSchema = z
-  .object({
-    connection: ConnectionSchema.optional(),
-    cloud: z
-      .object({
-        server: z.string(),
-        client: z.record(z.string(), z.unknown()).optional(),
-        tokens: z.record(z.string(), z.unknown()).optional(),
-        workspace: z.object({ id: z.string(), slug: z.string(), name: z.string() }).nullish(),
-      })
-      .optional(),
-  })
-  .loose();
-export type Credentials = z.infer<typeof CredentialsSchema>;
-
-export const stuntdoubleHome = (): string =>
-  process.env.STUNTDOUBLE_HOME || join(homedir(), '.stuntdouble');
-const credentialsFile = () => join(stuntdoubleHome(), 'credentials.json');
-
-export async function readCredentials(): Promise<Credentials> {
-  const raw = await readFile(credentialsFile(), 'utf8').catch(() => null);
-  if (!raw) return {};
-  try {
-    const parsed = CredentialsSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : {};
-  } catch {
-    return {};
-  }
-}
-
-/** Written whole, 0600 from the start, in a 0700 folder. */
-export async function writeCredentials(credentials: Credentials): Promise<void> {
-  const home = stuntdoubleHome();
-  await mkdir(home, { recursive: true, mode: 0o700 });
-  const file = credentialsFile();
-  const tmp = `${file}.${randomUUID()}.tmp`;
-  await writeFile(tmp, `${JSON.stringify(credentials, null, 2)}\n`, { mode: 0o600 });
-  await rename(tmp, file);
-  await chmod(file, 0o600);
-}
-
-export async function updateCredentials(
-  change: (current: Credentials) => Credentials
-): Promise<Credentials> {
-  const next = change(await readCredentials());
-  await writeCredentials(next);
-  return next;
-}
-
-export async function forgetCredentials(): Promise<void> {
-  await rm(credentialsFile(), { force: true });
-}
-
 /** A connection ready to call, key included. Never leaves this process. */
 export type Connection = {
   provider: Provider;
@@ -107,7 +52,8 @@ export type Connection = {
  * in the environment is enough on its own.
  */
 export async function resolveConnection(): Promise<Connection | null> {
-  const stored = (await readCredentials()).connection;
+  const parsed = ConnectionSchema.safeParse((await readCredentials()).connection);
+  const stored = parsed.success ? parsed.data : undefined;
   const provider: Provider | null =
     stored?.provider ?? (process.env.ANTHROPIC_API_KEY ? 'anthropic' : null);
   if (!provider) return null;
@@ -146,8 +92,8 @@ export async function saveConnection(input: {
   clear_key?: boolean;
 }): Promise<void> {
   await updateCredentials((current) => {
-    const keep =
-      current.connection?.provider === input.provider ? current.connection.api_key : null;
+    const old = ConnectionSchema.safeParse(current.connection);
+    const keep = old.success && old.data.provider === input.provider ? old.data.api_key : null;
     const connection = ConnectionSchema.parse({
       provider: input.provider,
       model: input.model.trim(),

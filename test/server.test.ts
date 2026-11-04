@@ -72,7 +72,7 @@ test('the key in the link becomes an HttpOnly, SameSite=Strict cookie', async ()
   assert.match(String(signIn.headers['set-cookie']), /HttpOnly; SameSite=Strict; Path=\//);
   const page = await get('/', { Cookie: cookie });
   assert.equal(page.status, 200);
-  assert.match(page.body, /<title>Stunt Double Local<\/title>/);
+  assert.match(page.body, /<title>Stunt Double Studio<\/title>/);
   assert.equal(page.headers['access-control-allow-origin'], undefined);
 });
 
@@ -189,6 +189,6 @@ test('the viewer shows no collapsed-row thumbnail and says why an unweighted run
     page,
     /No score: with no weighted checks, it passes only when every pass\/fail check passes/
   );
-  assert.match(page, /Copy cloud command/);
+  assert.match(page, /Copy re-run command/);
   assert.doesNotMatch(page, /'\?v=' \+ Date\.now\(\)/);
 });

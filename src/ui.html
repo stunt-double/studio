@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Stunt Double Local</title>
+    <title>Stunt Double Studio</title>
     <style>
       /* Continuity, ported from Stunt Double's @stuntdouble/ui (globals.css and
          motion.css): the semantic tokens, radii, type stacks and motion tiers
@@ -1321,7 +1321,7 @@
   <body>
     <header class="bar">
       <div class="container">
-        <span class="product">Stunt Double Local</span>
+        <span class="product">Stunt Double Studio</span>
         <nav aria-label="Viewer">
           <a href="/" data-nav>Runs</a>
           <a href="/definitions" data-nav>Checklists and actors</a>
@@ -1335,9 +1335,9 @@
     <footer>
       <div class="container">
         <p>
-          Local runs use the account Claude Code is signed in with and a browser on this machine,
-          one at a time while your session is open. The cloud runs on schedules and in parallel,
-          records every run and shares reports with your team.
+          Runs from Claude Code use the account it is signed in with and a browser on this machine,
+          one at a time while your session is open. The cloud runs on a schedule, with several
+          actors at once, records a replay of every run and shares reports with your team.
           <a href="https://stuntdouble.io/pricing">See plans</a>
         </p>
       </div>
@@ -1550,8 +1550,8 @@
             : {
                 icon: 'monitor',
                 label: run.runner.model
-                  ? 'Local, ' + run.runner.model.id + (full ? ', self-judged' : '')
-                  : 'Local, self-judged',
+                  ? 'Studio, ' + run.runner.model.id + (full ? ', self-judged' : '')
+                  : 'Studio, self-judged',
               };
       const checklistName = (run) =>
         run.checklist_name ||
@@ -1720,7 +1720,7 @@
         return [
           pageHeader({
             title: 'Runs',
-            description: 'Local and cloud runs of this project, newest first.',
+            description: 'Studio and cloud runs of this project, newest first.',
           }),
           h(
             'div',
@@ -2097,7 +2097,6 @@
           );
 
         const rerun = '/stuntdouble run ' + run.checklist + (resumable ? ' resume' : '');
-        const cloud = '/stuntdouble cloud ' + run.checklist;
         const actions = studio.runActions
           ? studio.runActions(run, running, resumable)
           : running
@@ -2115,18 +2114,6 @@
                     },
                     icon('copy'),
                     h('span', {}, resumable ? 'Copy resume command' : 'Copy re-run command')
-                  ),
-                  h(
-                    'button',
-                    {
-                      type: 'button',
-                      class: 'btn outline',
-                      title: cloud,
-                      'data-focus-key': 'cloud',
-                      onclick: (event) => copy(cloud, event.currentTarget),
-                    },
-                    icon('copy'),
-                    h('span', {}, 'Copy cloud command')
                   ),
                 ]
               : webUrl(run.runner.url)
@@ -2463,8 +2450,9 @@
         ];
       }
 
-      // What Stunt Double Studio's script (studio.js) builds on. The viewer on
-      // its own leaves it empty: inside Claude Code it reads and stops, no more.
+      // What Studio's scripts build on: studio.js for `stuntdouble studio`,
+      // viewer.js for the viewer Claude Code opens. `stuntdouble view` leaves it
+      // empty: it reads and stops, no more.
       const studio = (window.stuntdouble = {
         routes: [],
         runActions: null,

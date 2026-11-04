@@ -3,8 +3,9 @@
  *
  * Inside Claude Code (`stuntdouble mcp`) this package is a tool provider and
  * nothing more: the person's own session does every bit of reasoning, so the
- * MCP server and everything it imports make no model calls and never start a
- * process. The standalone Studio may call a model, but only on a connection
+ * MCP server and everything it imports make no model calls, never read a
+ * model key and never start a process. Its viewer may sign in to Stunt Double
+ * and start cloud runs (cloud.ts), which the hosted MCP runs and bills. The standalone Studio may call a model, but only on a connection
  * the person configures (their own Anthropic API key or an OpenAI-compatible
  * endpoint), through one module, model.ts, which only the standalone runner
  * imports. Nothing anywhere uses a Claude subscription: no model SDK, no
@@ -69,7 +70,6 @@ const STANDALONE = [
   'model.ts',
   'runner.ts',
   'credentials.ts',
-  'cloud.ts',
   'studio.ts',
   'setup-draft.ts',
   'setup-routes.ts',
@@ -81,6 +81,7 @@ test('the MCP server never reaches the model client, the keys, the Studio or a p
   const graph = await graphOf('mcp.ts');
   assert.ok(graph.has('run.ts') && graph.has('ui-server.ts'), 'the graph is followed');
   assert.ok(graph.has('vendor/scoring/scoring.ts'), 'into folders too');
+  assert.ok(graph.has('cloud.ts'), 'the viewer signs in to Stunt Double');
   for (const file of STANDALONE) assert.ok(!graph.has(file), `mcp.ts reaches ${file}`);
   for (const [file, text] of graph) {
     assert.doesNotMatch(text, /\bfetch\(/, `${file} calls fetch`);
