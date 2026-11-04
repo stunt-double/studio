@@ -4,7 +4,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -88,6 +88,60 @@ test('Run sends one channel event to Claude Code, from a valid slug only', async
   client = { name: 'codex-mcp-client', version: '1' };
   assert.equal((await run({ checklist: 'checkout', where: 'agent' })).status, 409);
   assert.equal(events.length, 1);
+});
+
+test('signed out, the cloud routes refuse in words and sign-in writes need this page’s Origin', async () => {
+  const workspaces = await call('/api/studio/cloud/workspaces');
+  assert.equal(workspaces.status, 403);
+  assert.match((await workspaces.json()).error, /Sign in to Stunt Double first/);
+  const post = (path: string, body: unknown, origin = `http://127.0.0.1:${ui.port}`) =>
+    call(
+      path,
+      { method: 'POST', body: JSON.stringify(body) },
+      { Origin: origin, 'Content-Type': 'application/json' }
+    );
+  assert.equal((await post('/api/studio/cloud/workspace', {})).status, 400);
+  assert.equal((await post('/api/studio/cloud/login', {}, 'https://evil.example')).status, 403);
+});
+
+test('sign-out drops the Stunt Double sign-in and keeps the model connection', async () => {
+  await writeFile(
+    join(home, 'credentials.json'),
+    JSON.stringify({
+      connection: { provider: 'anthropic' },
+      cloud: {
+        server: 'https://app.stuntdouble.io/api/mcp',
+        tokens: { access_token: 'secret-token', token_type: 'Bearer' },
+        workspace: { id: 'w1', slug: 'acme', name: 'Acme' },
+      },
+    }),
+    { mode: 0o600 }
+  );
+  const status = await (await call('/api/studio/cloud')).text();
+  assert.doesNotMatch(status, /secret-token/);
+  assert.deepEqual(JSON.parse(status), {
+    signed_in: true,
+    workspace: { id: 'w1', slug: 'acme', name: 'Acme' },
+  });
+  const out = await call(
+    '/api/studio/cloud/logout',
+    { method: 'POST', body: '{}' },
+    { Origin: `http://127.0.0.1:${ui.port}`, 'Content-Type': 'application/json' }
+  );
+  assert.deepEqual(await out.json(), { signed_in: false, workspace: null });
+  assert.deepEqual(JSON.parse(await readFile(join(home, 'credentials.json'), 'utf8')), {
+    connection: { provider: 'anthropic' },
+  });
+});
+
+test('a cancelled sign-in says so, escaped, and does not send the browser on', async () => {
+  const res = await fetch(
+    `http://127.0.0.1:${ui.port}/oauth/callback?state=s&error_description=${encodeURIComponent('<b>No</b>')}`
+  );
+  assert.equal(res.status, 400);
+  const page = await res.text();
+  assert.match(page, /&#60;b&#62;No&#60;\/b&#62;/);
+  assert.doesNotMatch(page, /<b>|http-equiv="refresh"/);
 });
 
 test('writes need this page’s Origin and JSON', async () => {
