@@ -277,8 +277,26 @@ test('studio: onboarding, editing, a run on a scripted model, and the run in the
     );
     await page.getByRole('heading', { name: 'Shop' }).waitFor();
     assert.ok(await page.getByText('Studio, scripted, self-judged').first().isVisible());
-    assert.ok(await page.getByText('Free shipping is offered').isVisible());
+    // Highlights lead: the actor's summary, and the failure that goes to its evidence.
+    const highlights = page.getByRole('region', { name: 'Highlights' });
+    assert.ok(await highlights.getByText('Guest checkout works; no shipping offer.').isVisible());
+    await highlights.getByRole('button', { name: 'Free shipping is offered' }).click();
+    await page.locator('#check-free-shipping .check-detail').waitFor();
     assert.ok(await page.getByRole('button', { name: 'Run again' }).isVisible());
+    // The journey: the page opened and each verdict where it was recorded.
+    await page.getByRole('tab', { name: /Journey/ }).click();
+    const journey = page.getByRole('list', { name: 'Journey' });
+    await journey
+      .getByText(/^Opened /)
+      .first()
+      .waitFor();
+    assert.equal(await journey.locator('img').count(), 3);
+    await page.getByRole('tab', { name: /Screenshots/ }).click();
+    await page.locator('.shots').waitFor();
+    assert.equal(await page.locator('.shots figure').count(), 3);
+    if (process.env.STUNTDOUBLE_E2E_SHOTS) {
+      await page.screenshot({ path: process.env.STUNTDOUBLE_E2E_SHOTS, fullPage: true });
+    }
   } finally {
     await browser.close();
   }

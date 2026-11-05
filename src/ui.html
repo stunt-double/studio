@@ -1106,6 +1106,229 @@
         }
       }
 
+      /* Highlights: what a reader opens a report to find, before the detail. */
+      .highlights {
+        display: grid;
+        gap: 1rem;
+        padding: 1rem;
+      }
+      .highlights ul {
+        display: grid;
+        gap: 0.5rem;
+      }
+      .highlight {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 0.125rem 0.5rem;
+        align-items: start;
+        font-size: 0.875rem;
+      }
+      .highlight > svg.icon {
+        margin-top: 0.125rem;
+      }
+      .highlight p {
+        color: var(--muted-foreground);
+        overflow-wrap: anywhere;
+      }
+      .linkish {
+        padding: 0;
+        border: 0;
+        background: none;
+        color: var(--foreground);
+        font: inherit;
+        font-weight: 500;
+        text-align: left;
+        text-decoration: underline;
+        text-decoration-color: var(--border);
+        text-underline-offset: 0.2em;
+        cursor: pointer;
+      }
+      .linkish:hover {
+        text-decoration-color: currentColor;
+      }
+
+      /* Tabs: one view of the run at a time, as the web report does. */
+      .tabs {
+        display: flex;
+        gap: 0.25rem;
+        overflow-x: auto;
+        border-bottom: 1px solid var(--border);
+      }
+      .tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        margin-bottom: -1px;
+        padding: 0.5rem 0.75rem;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: none;
+        color: var(--muted-foreground);
+        font: inherit;
+        font-size: 0.875rem;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: color var(--duration-quick) ease;
+      }
+      .tab:hover {
+        color: var(--foreground);
+      }
+      .tab[aria-selected='true'] {
+        border-bottom-color: var(--foreground);
+        color: var(--foreground);
+        font-weight: 500;
+      }
+      .tab:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .tab-panel > * + * {
+        margin-top: 2rem;
+      }
+
+      /* Journey: one rail through the pages, steps and verdicts, waits drawn on it. */
+      .journey-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--border);
+      }
+      @media (min-width: 40rem) {
+        .journey-stats {
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+      }
+      .journey-stats div {
+        display: grid;
+        gap: 0.25rem;
+        padding: 0.75rem 1rem;
+        background: var(--card);
+      }
+      .journey-stats dd {
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+      }
+      .journey-tools {
+        display: flex;
+        justify-content: flex-end;
+      }
+      .journey > li {
+        position: relative;
+        display: grid;
+        grid-template-columns: 2rem minmax(0, 1fr);
+        gap: 0 1rem;
+        padding: 0.75rem 0;
+      }
+      .journey > li::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: calc(1rem - 0.5px);
+        width: 1px;
+        background: var(--border);
+      }
+      .journey > li:first-child::before {
+        top: 1.75rem;
+      }
+      .journey > li:last-child::before {
+        bottom: calc(100% - 1.75rem);
+      }
+      .journey > li.step {
+        padding: 0.375rem 0;
+        font-size: 0.8125rem;
+        color: var(--muted-foreground);
+      }
+      .journey > li.wait {
+        padding: 0.125rem 0;
+        font-family: var(--font-mono);
+        font-size: 0.6875rem;
+        font-variant-numeric: tabular-nums;
+        color: var(--muted-foreground);
+      }
+      .journey > li.wait.longest {
+        color: var(--warning-ink);
+      }
+      .marker {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 2rem;
+        height: 2rem;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--card);
+      }
+      .step .marker {
+        width: 1.25rem;
+        height: 1.25rem;
+        margin-inline: auto;
+        border: 0;
+        background: var(--background);
+      }
+      .wait .marker {
+        height: 1rem;
+        border: 0;
+        background: none;
+      }
+      .moment {
+        display: grid;
+        gap: 0.375rem;
+        min-width: 0;
+        max-width: 42rem;
+        padding-top: 0.25rem;
+      }
+      .step .moment {
+        padding-top: 0;
+      }
+      .moment-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.25rem 0.5rem;
+        overflow-wrap: anywhere;
+      }
+      .moment-head time {
+        font-family: var(--font-mono);
+        font-size: 0.75rem;
+        font-variant-numeric: tabular-nums;
+        color: var(--muted-foreground);
+      }
+      .moment .shot img {
+        max-height: 12rem;
+      }
+      .moment .evidence {
+        font-size: 0.875rem;
+      }
+
+      /* Screenshots: every verdict's capture, at a glance. */
+      .shots {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+        gap: 1rem;
+      }
+      .shots figure {
+        display: grid;
+        gap: 0.5rem;
+        align-content: start;
+      }
+      .shots .shot {
+        max-width: 100%;
+      }
+      .shots .shot img {
+        max-height: 12rem;
+      }
+      .shots figcaption {
+        display: grid;
+        gap: 0.25rem;
+        font-size: 0.8125rem;
+      }
+
       /* Definitions. */
       .def {
         display: grid;
@@ -1401,6 +1624,13 @@
         timer:
           '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5l3-3"/><path d="M10 3h4"/><path d="M12 3v3"/>',
         'x-circle': '<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6"/><path d="M15 9l-6 6"/>',
+        route:
+          '<circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H17a3.5 3.5 0 0 0 0-7H7a3.5 3.5 0 0 1 0-7h8.5"/>',
+        navigation: '<path d="M3 11l18-8-8 18-2-8z"/>',
+        pointer: '<path d="M5 3l14 7-6 2-2 6z"/><path d="M13 12l6 6"/>',
+        image:
+          '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
+        flag: '<path d="M5 21V4"/><path d="M5 4h12l-2 4 2 4H5"/>',
       };
       function icon(name, className) {
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -1903,7 +2133,10 @@
         );
         const row = h(
           'li',
-          { class: 'check' + (open ? ' open' : '') + (opts.arrived ? ' animate-rise' : '') },
+          {
+            class: 'check' + (open ? ' open' : '') + (opts.arrived ? ' animate-rise' : ''),
+            id: 'check-' + check.key,
+          },
           h(
             'button',
             {
@@ -2029,6 +2262,413 @@
                   )
                 )
               )
+          )
+        );
+      }
+
+      // ── The journey: what the actor did, in order, from activity.jsonl ────
+      // The same rail as the web report's RunJourneyTimeline: pages opened,
+      // the steps between them, and each verdict where it was recorded, with
+      // the waits drawn on the rail. A local run has no inbox, so no email
+      // moments. Page reads and screenshots are the actor looking, not the
+      // person's journey, so they stay in Activity.
+      const JOURNEY_STEPS = new Set(['click', 'type', 'form_input', 'key', 'scroll']);
+      /** Below this, every step is worth showing; above it, the noise wins. */
+      const ALL_STEPS = 20;
+      /** A wait at least this long is worth pointing at. */
+      const NOTABLE_WAIT_S = 10;
+      const firstLine = (text, max = 160) => {
+        const line = String(text || '').split('\n')[0];
+        return line.length > max ? line.slice(0, max - 3) + '...' : line;
+      };
+
+      function journeyOf(run, activity) {
+        const results = new Map(run.results.map((r) => [r.check, r]));
+        const checks = new Map(run.checklist_snapshot.checks.map((c) => [c.key, c]));
+        const moments = [];
+        for (const line of activity) {
+          const input = line.input || {};
+          const at = line.at;
+          if (line.tool === 'start_run') {
+            moments.push({ kind: 'start', at, title: line.text || 'Started' });
+          } else if (line.tool === 'navigate') {
+            moments.push({ kind: 'navigate', at, title: 'Opened ' + (input.url || 'a page') });
+          } else if (JOURNEY_STEPS.has(line.tool)) {
+            moments.push({
+              kind: 'step',
+              at,
+              title: ACTIVITY[line.tool],
+              detail: firstLine(line.text),
+            });
+          } else if (line.tool === 'evaluate_check') {
+            const check = checks.get(input.check);
+            const result = results.get(input.check);
+            if (check && result) moments.push({ kind: 'check', at, check, result });
+          } else if (line.tool === 'finish_run' || line.tool === 'stop') {
+            moments.push({ kind: 'finish', at, title: line.text });
+          }
+        }
+        // A start_run after the first is a resume: the idle gap before it is
+        // the person's, not the product's, so it is never a wait.
+        let longest = null;
+        moments.forEach((m, i) => {
+          if (i === 0 || m.kind === 'start') return;
+          m.wait = Math.max(0, between(moments[i - 1].at, m.at));
+          if (!longest || m.wait > longest.wait) longest = m;
+        });
+        const count = (kind) => moments.filter((m) => m.kind === kind).length;
+        return {
+          moments,
+          longest: longest && longest.wait >= NOTABLE_WAIT_S ? longest : null,
+          pages: count('navigate'),
+          steps: count('step'),
+          checks: count('check'),
+        };
+      }
+
+      const momentTitle = (m) => (m.kind === 'check' ? m.check.description : m.title);
+
+      function journeyView(run, journey, duration) {
+        if (journey.moments.length === 0) {
+          return emptyState(
+            'route',
+            'No journey yet',
+            'The journey is drawn from the steps the actor takes. It fills in as the run goes.'
+          );
+        }
+        const all = showAllSteps.has(run.id) || journey.steps <= ALL_STEPS;
+        const moments = all ? journey.moments : journey.moments.filter((m) => m.kind !== 'step');
+        const stats = [
+          ['End to end', duration || '-'],
+          ['Pages opened', pad(journey.pages)],
+          ['Browser steps', pad(journey.steps)],
+          ['Checks judged', pad(journey.checks)],
+          ['Longest wait', journey.longest ? took(journey.longest.wait) : '-'],
+        ];
+        const rows = [];
+        moments.forEach((m, i) => {
+          // A hidden step's wait folds into the next row shown.
+          const wait = i > 0 && m.kind !== 'start' ? between(moments[i - 1].at, m.at) : 0;
+          if (wait >= 1) {
+            const longest = m === journey.longest;
+            rows.push(
+              h(
+                'li',
+                { class: 'wait' + (longest ? ' longest' : '') },
+                h('span', { class: 'marker', 'aria-hidden': 'true' }),
+                h('span', {}, (longest ? 'Longest wait: ' : '+') + took(wait))
+              )
+            );
+          }
+          rows.push(momentRow(run, m));
+        });
+        return h(
+          'div',
+          { class: 'section' },
+          h(
+            'dl',
+            { class: 'journey-stats' },
+            stats.map(([label, value]) =>
+              h('div', {}, h('dt', { class: 'overline' }, label), h('dd', {}, value))
+            )
+          ),
+          journey.steps > ALL_STEPS &&
+            h(
+              'div',
+              { class: 'journey-tools' },
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'btn ghost',
+                  'data-focus-key': 'all-steps',
+                  'aria-pressed': String(all),
+                  onclick: () => {
+                    if (all) showAllSteps.delete(run.id);
+                    else showAllSteps.add(run.id);
+                    render(false);
+                  },
+                },
+                h(
+                  'span',
+                  {},
+                  all ? 'Key moments only' : 'Show all ' + journey.steps + ' browser steps'
+                )
+              )
+            ),
+          h('ol', { class: 'journey', 'aria-label': 'Journey' }, rows)
+        );
+      }
+
+      function momentRow(run, m) {
+        if (m.kind === 'step') {
+          return h(
+            'li',
+            { class: 'step' },
+            h('span', { class: 'marker' }, icon('pointer')),
+            h(
+              'span',
+              { class: 'moment' },
+              h(
+                'span',
+                { class: 'moment-head' },
+                time(m.at, 'clock'),
+                h('span', {}, m.detail || m.title)
+              )
+            )
+          );
+        }
+        if (m.kind !== 'check') {
+          const mark = m.kind === 'navigate' ? 'navigation' : m.kind === 'start' ? 'run' : 'flag';
+          return h(
+            'li',
+            {},
+            h('span', { class: 'marker' }, icon(mark)),
+            h(
+              'span',
+              { class: 'moment' },
+              h('span', { class: 'moment-head' }, time(m.at, 'clock'), h('span', {}, m.title))
+            )
+          );
+        }
+        const [label, tone, mark] = RESULT[m.result.status];
+        const shot = m.result.screenshot && fileUrl('runs/' + run.id + '/' + m.result.screenshot);
+        return h(
+          'li',
+          {},
+          h('span', { class: 'marker' }, icon(mark, 'tone-' + m.result.status)),
+          h(
+            'span',
+            { class: 'moment' },
+            h(
+              'span',
+              { class: 'moment-head' },
+              time(m.at, 'clock'),
+              h('strong', {}, m.check.description),
+              h('span', { class: 'badge sm ' + tone }, label)
+            ),
+            h(
+              'p',
+              { class: 'evidence' + (m.result.status === 'informational' ? ' observed' : '') },
+              m.result.evidence
+            ),
+            shot &&
+              h(
+                'a',
+                {
+                  class: 'shot',
+                  href: shot,
+                  target: '_blank',
+                  title: 'Open the full-size screenshot',
+                },
+                h('img', {
+                  src: shot,
+                  alt: 'The page when ' + m.check.key + ' was judged',
+                  loading: 'lazy',
+                })
+              )
+          )
+        );
+      }
+
+      function screenshotsView(run) {
+        const checks = new Map(run.checklist_snapshot.checks.map((c) => [c.key, c]));
+        const shots = run.results.filter((r) => r.screenshot && checks.has(r.check));
+        if (shots.length === 0) {
+          return emptyState(
+            'image',
+            'No screenshots yet',
+            'A screenshot is saved with each verdict the actor records.'
+          );
+        }
+        return h(
+          'div',
+          { class: 'shots' },
+          shots.map((r) => {
+            const src = fileUrl('runs/' + run.id + '/' + r.screenshot);
+            const [label, tone] = RESULT[r.status];
+            return h(
+              'figure',
+              {},
+              h(
+                'a',
+                {
+                  class: 'shot',
+                  href: src,
+                  target: '_blank',
+                  title: 'Open the full-size screenshot',
+                },
+                h('img', { src, alt: 'The page when ' + r.check + ' was judged', loading: 'lazy' })
+              ),
+              h(
+                'figcaption',
+                {},
+                h('span', {}, checks.get(r.check).description),
+                h('span', {}, h('span', { class: 'badge sm ' + tone }, label))
+              )
+            );
+          })
+        );
+      }
+
+      // What somebody opens a report to find, before any detail: the actor's
+      // own summary, what went wrong, what it noticed and where the product
+      // kept it waiting. Each line goes to its evidence.
+      const HIGHLIGHTS = 3;
+      function highlightsCard(run, journey) {
+        const checks = run.checklist_snapshot.checks;
+        const results = new Map(run.results.map((r) => [r.check, r]));
+        const pick = (statuses) =>
+          checks.filter((c) => results.has(c.key) && statuses.includes(results.get(c.key).status));
+        const attention = pick(['failed', 'error']);
+        const observed = pick(['informational']);
+        const items = [];
+        const toCheck = (check) => () => {
+          runTabs.set(run.id, 'results');
+          toggled.set(run.id + ':' + check.key, true);
+          render(false).then(() => {
+            const row = document.getElementById('check-' + check.key);
+            row?.scrollIntoView({ block: 'start' });
+            row?.querySelector('.check-head')?.focus({ preventScroll: true });
+          });
+        };
+        const checkItem = (check) => {
+          const result = results.get(check.key);
+          const [, , mark] = RESULT[result.status];
+          return h(
+            'li',
+            { class: 'highlight' },
+            icon(mark, 'tone-' + result.status),
+            h(
+              'button',
+              { type: 'button', class: 'linkish', onclick: toCheck(check) },
+              check.description
+            ),
+            h('span'),
+            h('p', {}, firstLine(result.evidence, 220))
+          );
+        };
+        items.push(...attention.slice(0, HIGHLIGHTS).map(checkItem));
+        items.push(...observed.slice(0, Math.max(1, HIGHLIGHTS - attention.length)).map(checkItem));
+        const more = attention.length - Math.min(attention.length, HIGHLIGHTS);
+        if (more > 0) {
+          items.push(
+            h(
+              'li',
+              { class: 'highlight' },
+              h('span'),
+              h(
+                'p',
+                {},
+                more + ' more ' + (more === 1 ? 'check needs' : 'checks need') + ' attention below.'
+              )
+            )
+          );
+        }
+        if (journey.longest) {
+          items.push(
+            h(
+              'li',
+              { class: 'highlight' },
+              icon('timer', 'tone-error'),
+              h(
+                'button',
+                {
+                  type: 'button',
+                  class: 'linkish',
+                  onclick: () => {
+                    runTabs.set(run.id, 'journey');
+                    render(false);
+                  },
+                },
+                'Waited ' + took(journey.longest.wait)
+              ),
+              h('span'),
+              h('p', {}, 'Before: ' + firstLine(momentTitle(journey.longest), 160))
+            )
+          );
+        }
+        if (!run.summary && items.length === 0) return null;
+        return h(
+          'section',
+          { class: 'card highlights', 'aria-label': 'Highlights' },
+          h('p', { class: 'overline' }, 'Highlights'),
+          run.summary &&
+            (run.status === 'failed'
+              ? h(
+                  'div',
+                  { class: 'notice destructive' },
+                  icon('octagon-x'),
+                  h('p', {}, run.summary)
+                )
+              : h('p', { class: 'quote' }, run.summary)),
+          items.length > 0 && h('ul', {}, items)
+        );
+      }
+
+      // Which tab each run shows, and whose journey shows every step, for this page view.
+      const runTabs = new Map();
+      const showAllSteps = new Set();
+
+      function tabbed(run, tabs) {
+        const enabled = tabs.filter((t) => !t.disabled);
+        let current = runTabs.get(run.id);
+        if (!enabled.some((t) => t.id === current)) current = enabled[0].id;
+        const select = (id) => {
+          runTabs.set(run.id, id);
+          render(false);
+        };
+        const bar = h(
+          'div',
+          {
+            class: 'tabs',
+            role: 'tablist',
+            'aria-label': 'Run detail',
+            onkeydown: (event) => {
+              const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+              if (!step) return;
+              event.preventDefault();
+              const at = enabled.findIndex((t) => t.id === current);
+              const next = enabled[(at + step + enabled.length) % enabled.length];
+              runTabs.set(run.id, next.id);
+              render(false).then(() => document.getElementById('tab-' + next.id)?.focus());
+            },
+          },
+          tabs.map((t) =>
+            h(
+              'button',
+              {
+                type: 'button',
+                class: 'tab',
+                role: 'tab',
+                id: 'tab-' + t.id,
+                'data-focus-key': 'tab:' + t.id,
+                'aria-selected': String(t.id === current),
+                'aria-controls': 'panel-' + t.id,
+                tabindex: t.id === current ? '0' : '-1',
+                disabled: t.disabled,
+                onclick: () => select(t.id),
+              },
+              icon(t.icon),
+              t.label,
+              t.count != null && h('span', { class: 'count' }, pad(t.count))
+            )
+          )
+        );
+        const tab = tabs.find((t) => t.id === current);
+        return h(
+          'div',
+          { class: 'section' },
+          bar,
+          h(
+            'div',
+            {
+              class: 'tab-panel',
+              role: 'tabpanel',
+              id: 'panel-' + tab.id,
+              'aria-labelledby': 'tab-' + tab.id,
+            },
+            tab.render()
           )
         );
       }
@@ -2251,12 +2891,64 @@
           })
           .filter((g) => g.checks.length > 0);
 
-        const notice =
-          run.summary &&
-          (run.status === 'failed'
-            ? h('div', { class: 'notice destructive' }, icon('octagon-x'), h('p', {}, run.summary))
-            : h('p', { class: 'quote' }, run.summary));
+        const journey = journeyOf(run, data.activity);
+        const resultsView = () =>
+          groups.map((group) =>
+            h(
+              'section',
+              { class: 'section' },
+              h(
+                'h2',
+                { class: 'section-title' },
+                group.title,
+                h('span', { class: 'count' }, pad(group.checks.length))
+              ),
+              h(
+                'ul',
+                { class: 'group' },
+                group.checks.map((check) =>
+                  checkRow(run, check, results.get(check.key), {
+                    running,
+                    openByDefault: group.openByDefault,
+                    arrived: results.has(check.key) && arrived(check.key),
+                    earlier: results.has(check.key) && earlier(results.get(check.key)),
+                  })
+                )
+              )
+            )
+          );
+        const activityView = () =>
+          h(
+            'ol',
+            { class: 'group activity', 'aria-label': 'Activity' },
+            data.activity.map((line) =>
+              h(
+                'li',
+                {},
+                time(line.at, 'clock'),
+                h('span', { title: line.tool }, ACTIVITY[line.tool] || line.tool),
+                PAGE_READS.has(line.tool)
+                  ? h(
+                      'details',
+                      { class: 'text' },
+                      h(
+                        'summary',
+                        {},
+                        line.tool === 'find' && line.input && line.input.query
+                          ? '"' + line.input.query + '": show matches'
+                          : 'Show page text'
+                      ),
+                      line.text
+                    )
+                  : h('span', { class: 'text' }, line.text)
+              )
+            )
+          );
+        const shots = run.results.filter((r) => r.screenshot).length;
 
+        // Highlights first, then the score, then one view at a time: the
+        // checks, the journey, the screenshots and the raw tool calls, as the
+        // web report's tabs are.
         return [
           header,
           h(
@@ -2264,69 +2956,41 @@
             { class: 'stack' },
             live,
             studio.runExtras && studio.runExtras(run),
-            notice,
+            !running && highlightsCard(run, journey),
             summaryCard(run, fresh),
-            groups.map((group) =>
-              h(
-                'section',
-                { class: 'section' },
-                h(
-                  'h2',
-                  { class: 'section-title' },
-                  group.title,
-                  h('span', { class: 'count' }, pad(group.checks.length))
-                ),
-                h(
-                  'ul',
-                  { class: 'group' },
-                  group.checks.map((check) =>
-                    checkRow(run, check, results.get(check.key), {
-                      running,
-                      openByDefault: group.openByDefault,
-                      arrived: results.has(check.key) && arrived(check.key),
-                      earlier: results.has(check.key) && earlier(results.get(check.key)),
-                    })
-                  )
-                )
-              )
-            ),
-            data.activity.length > 0 &&
-              h(
-                'section',
-                { class: 'section' },
-                h(
-                  'h2',
-                  { class: 'section-title' },
-                  'Activity',
-                  h('span', { class: 'count' }, pad(data.activity.length))
-                ),
-                h(
-                  'ol',
-                  { class: 'group activity' },
-                  data.activity.map((line) =>
-                    h(
-                      'li',
-                      {},
-                      time(line.at, 'clock'),
-                      h('span', { title: line.tool }, ACTIVITY[line.tool] || line.tool),
-                      PAGE_READS.has(line.tool)
-                        ? h(
-                            'details',
-                            { class: 'text' },
-                            h(
-                              'summary',
-                              {},
-                              line.tool === 'find' && line.input && line.input.query
-                                ? '"' + line.input.query + '": show matches'
-                                : 'Show page text'
-                            ),
-                            line.text
-                          )
-                        : h('span', { class: 'text' }, line.text)
-                    )
-                  )
-                )
-              )
+            tabbed(run, [
+              {
+                id: 'results',
+                label: 'Results',
+                icon: 'checklist',
+                count: checks.length,
+                render: resultsView,
+              },
+              {
+                id: 'journey',
+                label: 'Journey',
+                icon: 'route',
+                count: journey.moments.length || null,
+                disabled: journey.moments.length === 0,
+                render: () => journeyView(run, journey, duration),
+              },
+              {
+                id: 'screenshots',
+                label: 'Screenshots',
+                icon: 'image',
+                count: shots || null,
+                disabled: shots === 0,
+                render: () => screenshotsView(run),
+              },
+              {
+                id: 'activity',
+                label: 'Activity',
+                icon: 'monitor',
+                count: data.activity.length || null,
+                disabled: data.activity.length === 0,
+                render: activityView,
+              },
+            ])
           ),
         ];
       }
@@ -2521,6 +3185,7 @@
             app.classList.add('animate-page-in');
           }
         });
+        return rendering;
       }
 
       document.addEventListener('click', (event) => {
