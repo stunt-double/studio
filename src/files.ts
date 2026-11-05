@@ -153,6 +153,11 @@ export type Result = z.infer<typeof ResultSchema>;
 
 export const RunSchema = z.object({
   format: z.literal('stuntdouble.run/1'),
+  /**
+   * Additions within format 1, so earlier viewers still read the file. Absent
+   * is 1. 2: activity.jsonl browser steps carry `ms`, `page`, `waits` and `shot`.
+   */
+  revision: z.int().min(1).optional(),
   id: z.string(),
   runner: z.object({
     kind: z.enum(['local', 'cloud']),

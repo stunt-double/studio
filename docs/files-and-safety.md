@@ -12,13 +12,22 @@ Everything lives in `.stuntdouble/` in your project, and everything but `.live/`
                              "model_screenshots": "on_request", "safety": "third_party"}
   actors/<slug>.json        name, description, system_prompt, knowledge, persist_login
   checklists/<slug>.json    name, actor, url, instructions, checks (each with a stable key), pass_threshold, ...
-  runs/<stamp>-<checklist>/ run.json, activity.jsonl, shots/<check>.png
+  runs/<stamp>-<checklist>/ run.json, activity.jsonl, shots/<check>.png, steps/<n>.jpg
   .live/                    the viewer's address and key, Studio's address and key (studio.json), the latest frame, the stop flag
 ```
 
 Actors and checklists use the same fields, and the same limits, as the Stunt Double MCP server's `create_actor` and `create_checklist`, so the same files run in the cloud. The exception is `browser_config` (a preset, viewport, touch or locale), which the cloud inputs do not take yet, so a cloud run uses the default desktop browser. A local run swaps the checklist URL's origin for `local_base_url`, so one checklist covers `localhost` here and the public address there.
 
 A Studio run's `run.json` says which model it ran on: `runner` gains `model` (`{"provider": "anthropic", "id": "claude-opus-5-5"}`) and, once it finishes, `usage` (`steps`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cost_usd`). Both are optional, so older files read as before.
+
+`activity.jsonl` has a line per tool call (`at`, `tool`, `input`, `text`). Since `run.json` revision 2, a browser step's line also has:
+
+- `ms`: how long the step took.
+- `page`: the page's `url` (without its query or fragment, which can carry a sign-in code) and `title` after the step.
+- `waits`: each time the step waited on the page, as `{"kind": "navigation" | "load", "ms": 812}`. Fixed pauses (the `wait` tool, the settle after an action) are left out, so the longest wait is the product's.
+- `shot`: for a step that moves the page, a small JPEG of the viewport, `steps/0001.jpg` and on. Steps that only read the page (`read_page`, `find`, `get_page_text`, `screenshot`) and steps that type (`type`, `form_input`) keep none, so a typed value never reaches a committed picture.
+
+Any of these is left out when the browser could not say. `run.json` keeps `"format": "stuntdouble.run/1"` and adds `"revision": 2`, so earlier viewers still read the run; a file with no `revision` is revision 1.
 
 ## Scoring
 

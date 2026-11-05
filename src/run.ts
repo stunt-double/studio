@@ -3,9 +3,11 @@
 //
 // Everything a run produces is a file under `.stuntdouble/runs/<id>/`, written
 // as it happens: `run.json` is rewritten atomically after every verdict, and
-// `activity.jsonl` gains a line per tool call. A run whose process dies stays
-// `running` on disk with no live marker (files.ts `isLive`), and the next
-// start_run marks it interrupted, so it can be resumed.
+// `activity.jsonl` gains a line per tool call. A browser step's line also says
+// where the page landed, how long the page kept it waiting, and, for a step
+// that moves the page, names a small picture of it under `steps/`. A run whose
+// process dies stays `running` on disk with no live marker (files.ts
+// `isLive`), and the next start_run marks it interrupted, so it can be resumed.
 
 import {
   DirectBrowserTools,
@@ -20,7 +22,7 @@ import { join } from 'node:path';
 
 import pkg from '../package.json' with { type: 'json' };
 import { buildBrief, checkLabel } from './brief.ts';
-import { type LaunchOptions, type LocalDriver, PlaywrightDriver } from './driver.ts';
+import { type LaunchOptions, type LocalDriver, type PageWait, PlaywrightDriver } from './driver.ts';
 import { cleanLocator, focusEvidence } from './evidence.ts';
 import {
   type Actor,
@@ -71,6 +73,36 @@ const PRIVATE_REFUSED =
 const SETUP = 'Run /stuntdouble setup to create one.';
 /** activity.jsonl is committed, so a page read is kept to its opening lines. */
 const LOG_TEXT_CHARS = 500;
+const LOG_TITLE_CHARS = 200;
+/**
+ * The run.json revision this version writes. `format` stays `stuntdouble.run/1`
+ * so earlier viewers still read the run; revision 2 adds `page`, `waits`, `ms`
+ * and `shot` to browser steps in activity.jsonl.
+ */
+export const RUN_REVISION = 2;
+/**
+ * Tools whose step keeps no picture: those that only read the page, which
+ * cannot have moved, and those that type, whose picture would show the value
+ * `redactInput` keeps out of the log (an email, a code, a card number).
+ */
+const NO_PICTURE_TOOLS = new Set([
+  'read_page',
+  'find',
+  'get_page_text',
+  'screenshot',
+  'type',
+  'form_input',
+]);
+/** How long a step waits for the page's title or its picture before leaving it out. */
+const STEP_RECORD_TIMEOUT_MS = 2_000;
+
+/** What a browser step adds to its activity line. */
+type StepRecord = {
+  ms: number;
+  page?: { url: string; title: string };
+  waits?: PageWait[];
+  shot?: string;
+};
 
 const PRESETS = {
   desktop: { width: 1280, height: 720, touch: false },
@@ -92,6 +124,8 @@ type Active = {
   tempProfile: string | null;
   everyScreenshot: boolean;
   stopped: boolean;
+  /** Step pictures saved so far, so a resumed run numbers on from the last. */
+  shots: number;
 };
 
 /** The checklist URL with its origin swapped for `local_base_url`. */
@@ -241,6 +275,7 @@ export class LocalSession {
       run = {
         ...entry.run,
         runner: this.client ? { ...entry.run.runner, client: this.client } : entry.run.runner,
+        revision: RUN_REVISION,
         results: entry.run.results.filter((r) => r.evidence !== NOT_JUDGED),
         status: 'running',
         pid: process.pid,
@@ -252,6 +287,7 @@ export class LocalSession {
       dir = '';
       run = {
         format: 'stuntdouble.run/1',
+        revision: RUN_REVISION,
         id: '',
         runner: {
           ...this.runnerFields,
@@ -352,6 +388,7 @@ export class LocalSession {
       tempProfile,
       everyScreenshot: config.model_screenshots === 'every_action',
       stopped: false,
+      shots: input.resume ? await lastShot(join(dir, 'steps')) : 0,
     };
     this.finished = null;
     await this.save();
@@ -390,18 +427,22 @@ export class LocalSession {
     const host = page ? (URL.parse(await page.url())?.hostname ?? '') : '';
     const tools =
       active.guarded && !isTrustedHost(host, active.trustedHosts) ? active.guarded : active.trusted;
+    active.driver.takeWaits?.(); // Waits from before this step are not its own.
+    const started = performance.now();
     const result = await tools.run(name, input);
+    const ms = Math.round(performance.now() - started);
     // The browser refused a navigation the tool did not make itself (driver.ts).
     // A redirect may have shown the page for a moment, so nothing read is kept.
     const refusal = active.driver.takeRefusal();
     if (refusal) {
       const text = `Error: Navigation refused. ${refusal}`;
-      await this.log(name, redactInput(name, input), text);
+      active.driver.takeWaits?.();
+      await this.log(name, redactInput(name, input), text, { ms });
       return { text, isError: true };
     }
     if (result.screenshotBase64)
       await this.saveFrame(Buffer.from(result.screenshotBase64, 'base64'));
-    await this.log(name, redactInput(name, input), result.text);
+    await this.log(name, redactInput(name, input), result.text, await this.stepRecord(name, ms));
     const image =
       result.screenshotBase64 && (name === 'screenshot' || active.everyScreenshot)
         ? result.screenshotBase64
@@ -688,20 +729,81 @@ export class LocalSession {
     await writeJsonAtomic(join(active.dir, 'run.json'), active.run);
   }
 
-  private async log(tool: string, input: unknown, text: string): Promise<void> {
+  private async log(tool: string, input: unknown, text: string, step?: StepRecord): Promise<void> {
     const active = this.requireActive();
     await appendJsonl(join(active.dir, 'activity.jsonl'), {
       at: now(),
       tool,
       input,
       text: text.length > LOG_TEXT_CHARS ? `${text.slice(0, LOG_TEXT_CHARS)}...` : text,
+      ...step,
     });
+  }
+
+  /**
+   * Where a browser step left the page, and what it waited on. Best effort: a
+   * tab that closed or a page mid-navigation leaves the field out rather than
+   * failing the step.
+   */
+  private async stepRecord(tool: string, ms: number): Promise<StepRecord> {
+    const active = this.requireActive();
+    const step: StepRecord = { ms };
+    const waits = active.driver.takeWaits?.() ?? [];
+    if (waits.length) step.waits = waits;
+    try {
+      const page = await active.driver.context.activePage();
+      if (!page) return step;
+      const [url, title] = await withTimeout(Promise.all([page.url(), page.title()]));
+      step.page = { url: withoutQuery(url), title: title.slice(0, LOG_TITLE_CHARS) };
+    } catch {
+      // Left out.
+    }
+    if (NO_PICTURE_TOOLS.has(tool) || !active.driver.thumbnail) return step;
+    try {
+      const jpeg = await withTimeout(active.driver.thumbnail());
+      if (jpeg) {
+        // Numbered before the write, so no two steps can share a name.
+        const shot = `steps/${String(++active.shots).padStart(4, '0')}.jpg`;
+        await writeFileAtomic(join(active.dir, shot), jpeg);
+        step.shot = shot;
+      }
+    } catch {
+      // Left out.
+    }
+    return step;
   }
 
   /** The viewer's live frame, best effort. ponytail: one per project, so two sessions running at once share it. */
   private async saveFrame(png: Uint8Array): Promise<void> {
     await writeFileAtomic(join(this.root, '.live', 'latest.png'), png).catch(() => {});
   }
+}
+
+/**
+ * A page address without its query or fragment: activity.jsonl is committed,
+ * and a redirect can carry a sign-in code or a token there.
+ */
+export function withoutQuery(url: string): string {
+  const parsed = URL.parse(url);
+  return parsed
+    ? `${parsed.origin === 'null' ? parsed.protocol : parsed.origin}${parsed.pathname}`
+    : url;
+}
+
+/** The highest step picture number in `dir`, so a resumed run never writes over one. */
+async function lastShot(dir: string): Promise<number> {
+  const files = await readdir(dir).catch(() => [] as string[]);
+  return Math.max(0, ...files.map((f) => Number(/^(\d+)\.jpg$/.exec(f)?.[1] ?? 0)));
+}
+
+function withTimeout<T>(work: Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('timed out')), STEP_RECORD_TIMEOUT_MS);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 /**

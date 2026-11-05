@@ -19,7 +19,46 @@ import type {
   DriverWaitForSelectorOptions,
 } from '@stuntkit/browser-toolset/driver';
 import { hostMatchesDomain } from '@stuntkit/browser-toolset/safety';
-import { chromium, type BrowserContext, type Page, type Request } from 'playwright-core';
+import {
+  chromium,
+  type BrowserContext,
+  type CDPSession,
+  type Page,
+  type Request,
+} from 'playwright-core';
+
+/**
+ * Time the browser spent waiting on the page during a step: a navigation (goto,
+ * back, forward) or a load state. Fixed pauses (`waitForTimeout`, the toolset's
+ * settle delay and the `wait` tool) are not counted: they are the same length
+ * whatever the product does.
+ */
+export type PageWait = { kind: 'navigation' | 'load'; ms: number };
+
+/** Collects the waits since the last `take`, shared by every tab of one browser. */
+class WaitLog {
+  private waits: PageWait[] = [];
+
+  async time<T>(kind: PageWait['kind'], work: () => Promise<T>): Promise<T> {
+    const started = performance.now();
+    try {
+      return await work();
+    } finally {
+      this.waits.push({ kind, ms: Math.round(performance.now() - started) });
+    }
+  }
+
+  take(): PageWait[] {
+    const waits = this.waits;
+    this.waits = [];
+    return waits;
+  }
+}
+
+/** A step's thumbnail: about this wide, in CSS pixels, as a JPEG. */
+const THUMBNAIL_WIDTH = 480;
+const THUMBNAIL_QUALITY = 60;
+const cdpSessions = new WeakMap<Page, Promise<CDPSession>>();
 
 /** Playwright's `Page` objects are stable, so a WeakMap gives each tab a lasting id. */
 const pageIds = new WeakMap<Page, string>();
@@ -38,23 +77,27 @@ function idOf(page: Page): string {
 class PlaywrightPage implements DriverPage {
   readonly id: string;
   readonly raw: Page;
+  private readonly waits: WaitLog;
 
-  constructor(page: Page) {
+  constructor(page: Page, waits: WaitLog) {
     this.raw = page;
     this.id = idOf(page);
+    this.waits = waits;
   }
 
   goto(url: string, options: DriverNavigateOptions = {}) {
-    return this.raw.goto(url, {
-      ...(options.waitUntil ? { waitUntil: options.waitUntil } : {}),
-      ...(options.timeoutMs ? { timeout: options.timeoutMs } : {}),
-    });
+    return this.waits.time('navigation', () =>
+      this.raw.goto(url, {
+        ...(options.waitUntil ? { waitUntil: options.waitUntil } : {}),
+        ...(options.timeoutMs ? { timeout: options.timeoutMs } : {}),
+      })
+    );
   }
   goBack() {
-    return this.raw.goBack();
+    return this.waits.time('navigation', () => this.raw.goBack());
   }
   goForward() {
-    return this.raw.goForward();
+    return this.waits.time('navigation', () => this.raw.goForward());
   }
   screenshot(options: DriverScreenshotOptions = {}): Promise<Buffer> {
     return this.raw.screenshot(options);
@@ -82,7 +125,9 @@ class PlaywrightPage implements DriverPage {
     return this.raw.waitForSelector(selector, options);
   }
   waitForLoadState(state: DriverLoadState, timeoutMs?: number) {
-    return this.raw.waitForLoadState(state, timeoutMs ? { timeout: timeoutMs } : undefined);
+    return this.waits.time('load', () =>
+      this.raw.waitForLoadState(state, timeoutMs ? { timeout: timeoutMs } : undefined)
+    );
   }
   locator(selector: string): DriverLocator {
     return this.raw.locator(selector).first();
@@ -116,6 +161,7 @@ class PlaywrightPage implements DriverPage {
 
 class PlaywrightContext implements DriverContext {
   private readonly context: BrowserContext;
+  readonly waits = new WaitLog();
   private active: Page | undefined;
   private policy: DriverDomainPolicy = {};
   private routed = false;
@@ -128,19 +174,19 @@ class PlaywrightContext implements DriverContext {
     });
   }
 
-  activePage(): DriverPage | undefined {
+  activePage(): PlaywrightPage | undefined {
     const open = this.context.pages();
     if (!this.active || this.active.isClosed()) this.active = open[open.length - 1];
-    return this.active ? new PlaywrightPage(this.active) : undefined;
+    return this.active ? new PlaywrightPage(this.active, this.waits) : undefined;
   }
   pages(): DriverPage[] {
-    return this.context.pages().map((p) => new PlaywrightPage(p));
+    return this.context.pages().map((p) => new PlaywrightPage(p, this.waits));
   }
   async newPage(url?: string): Promise<DriverPage> {
     const page = await this.context.newPage();
     this.active = page;
-    if (url) await page.goto(url);
-    return new PlaywrightPage(page);
+    if (url) await this.waits.time('navigation', () => page.goto(url));
+    return new PlaywrightPage(page, this.waits);
   }
   async setActivePage(page: DriverPage): Promise<void> {
     const raw = this.context.pages().find((p) => idOf(p) === page.id);
@@ -190,6 +236,10 @@ export type LaunchOptions = {
 export type LocalDriver = BrowserDriver & {
   /** Why the browser refused to open a page since the last call, if it did; reading it resets it. */
   takeRefusal(): string | null;
+  /** The page waits since the last call; reading them resets them. */
+  takeWaits?(): PageWait[];
+  /** A small JPEG of the active tab's viewport, or null when there is none. */
+  thumbnail?(): Promise<Uint8Array | null>;
 };
 
 export class PlaywrightDriver implements LocalDriver {
@@ -265,6 +315,43 @@ export class PlaywrightDriver implements LocalDriver {
     const refusal = this.refusal;
     this.refusal = null;
     return refusal;
+  }
+
+  takeWaits(): PageWait[] {
+    return this.context.waits.take();
+  }
+
+  /**
+   * Chrome scales the capture itself (DevTools' `clip.scale`), so a step's
+   * picture costs tens of kilobytes rather than a full-size PNG, with no image
+   * library to resize it.
+   */
+  async thumbnail(): Promise<Uint8Array | null> {
+    const page = this.context.activePage()?.raw;
+    if (!page) return null;
+    let session = cdpSessions.get(page);
+    if (!session) {
+      session = this.browserContext.newCDPSession(page);
+      cdpSessions.set(page, session);
+      // A session that failed to open is tried again next time, not kept.
+      session.catch(() => cdpSessions.delete(page));
+    }
+    const cdp = await session;
+    // The visible area in document coordinates, so a scrolled page shows where it is scrolled to.
+    const { cssVisualViewport: view } = await cdp.send('Page.getLayoutMetrics');
+    if (!view.clientWidth || !view.clientHeight) return null;
+    const { data } = await cdp.send('Page.captureScreenshot', {
+      format: 'jpeg',
+      quality: THUMBNAIL_QUALITY,
+      clip: {
+        x: view.pageX,
+        y: view.pageY,
+        width: view.clientWidth,
+        height: view.clientHeight,
+        scale: Math.min(1, THUMBNAIL_WIDTH / view.clientWidth),
+      },
+    });
+    return Buffer.from(data, 'base64');
   }
 
   /** Instruction-style actions need a model of their own. Nothing here calls them. */

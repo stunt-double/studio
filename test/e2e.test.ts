@@ -259,6 +259,22 @@ test('a checklist runs end to end over MCP in headless Chrome', { timeout: 60_00
   assert.doesNotMatch(log, /SECRET-DATA/);
   const activity = log.trim().split('\n');
   assert.ok(activity.length >= 8, `${activity.length} activity lines`);
+  assert.equal(run.revision, 2);
+  // Each browser step says where it landed, what it waited on, and shows it small.
+  const steps = activity.map((l) => JSON.parse(l)).filter((l) => typeof l.ms === 'number');
+  const landed = steps.find((l) => l.tool === 'navigate');
+  assert.ok(landed, 'a navigate step');
+  assert.equal(landed.page.url, `${base}/`);
+  assert.equal(typeof landed.page.title, 'string');
+  assert.ok(
+    landed.waits.some((w: { kind: string; ms: number }) => w.kind === 'navigation' && w.ms >= 0)
+  );
+  assert.match(landed.shot, /^steps\/\d{4}\.jpg$/);
+  const jpeg = await readFile(join(runDir, landed.shot));
+  assert.deepEqual([...jpeg.subarray(0, 2)], [0xff, 0xd8]);
+  assert.ok(jpeg.length < 100_000, `${jpeg.length} bytes`);
+  for (const read of steps.filter((l) => l.tool === 'read_page'))
+    assert.equal(read.shot, undefined);
   for (const key of ['search-box', 'free-shipping', 'guest-checkout']) {
     const png = await readFile(join(runDir, 'shots', `${key}.png`));
     assert.equal(png.subarray(1, 4).toString(), 'PNG', key);

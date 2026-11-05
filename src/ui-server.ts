@@ -60,6 +60,7 @@ export type UiServer = {
 
 const TYPES: Record<string, string> = {
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
   '.json': 'application/json',
   '.jsonl': 'text/plain; charset=utf-8',
 };
@@ -304,8 +305,8 @@ export async function startUi(options: {
       if (!file) return send(res, 403, 'Outside .stuntdouble/');
       const type = TYPES[extname(file)];
       if (!type) return send(res, 404, 'Not found');
-      // A verdict's screenshot never changes once written; the live frame does.
-      const cache = rel.includes('/shots/') ? 'private, max-age=86400' : 'no-store';
+      // A verdict's or a step's picture never changes once written; the live frame does.
+      const cache = /\/(shots|steps)\//.test(rel) ? 'private, max-age=86400' : 'no-store';
       return send(res, 200, await readFile(file), type, { 'Cache-Control': cache });
     }
     return send(res, 404, 'Not found');
