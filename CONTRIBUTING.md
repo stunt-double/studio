@@ -31,7 +31,7 @@ Conventions:
 
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat(studio): ...`, `fix: ...`, `docs: ...`).
 - Source imports use explicit `.ts` extensions, and tests use `node:test` and `node:assert/strict`, so the source runs under `node --test` without a build. Avoid TypeScript syntax that type stripping rejects (parameter properties, enums, namespaces); `erasableSyntaxOnly` in `tsconfig.json` catches it.
-- `src/vendor/scoring/` is vendored verbatim from the Stunt Double monorepo, so a local run scores exactly as a cloud run does. Do not edit it here.
+- `src/vendor/scoring/` and `src/vendor/usability/` are vendored verbatim from the Stunt Double monorepo, so a local run or interview scores exactly as a cloud one does (`test/usability-parity.test.ts` runs the monorepo's own UMUX cases). Do not edit them here.
 - `test/no-model.test.ts` holds the policy line in the README: nothing in the MCP server calls a model, and nothing uses a Claude subscription. Keep it passing.
 - No emdash characters, in code or prose. British English in prose.
 
