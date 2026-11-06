@@ -20,13 +20,17 @@ import {
   ActorSchema,
   ChecklistSchema,
   effectiveStatus,
+  readInterviewRun,
+  readInterviewRuns,
   readJson,
   readRun,
   readRuns,
   tallyRun,
   writeFileAtomic,
+  type InterviewRun,
   type Run,
 } from './files.ts';
+import { scoreInterview } from './interview.ts';
 import { projectId } from './studio-link.ts';
 
 export const FIRST_PORT = 4747;
@@ -151,6 +155,20 @@ function runSummary(root: string, run: Run, names: Map<string, string>) {
   };
 }
 
+/** An interview session for a list: its status, item count and usability score, not its answers. */
+function interviewSummary(root: string, run: InterviewRun, names: Map<string, string>) {
+  const { interview_snapshot, transcript, usability: _usability, ...rest } = run;
+  return {
+    ...rest,
+    status: effectiveStatus(root, run),
+    actor_name: names.get(run.actor) ?? null,
+    interview_name: interview_snapshot.name,
+    answered: transcript.length,
+    items: interview_snapshot.sections.reduce((n, s) => n + s.items.length, 0),
+    usability_score: scoreInterview(run),
+  };
+}
+
 export async function readBody(req: IncomingMessage): Promise<string> {
   let body = '';
   for await (const chunk of req) {
@@ -212,7 +230,11 @@ export async function startUi(options: {
       const origin = req.headers.origin;
       if (origin && origin !== `http://${host}`) return send(res, 403, 'Forbidden');
       const { run } = JSON.parse(await readBody(req)) as { run?: unknown };
-      const entry = typeof run === 'string' ? await readRun(root, run) : null;
+      // A checklist run or an interview session: both stop through the same flag.
+      const entry =
+        typeof run === 'string'
+          ? ((await readRun(root, run)) ?? (await readInterviewRun(root, run)))
+          : null;
       if (!entry || !('run' in entry) || effectiveStatus(root, entry.run) !== 'running') {
         return send(res, 409, 'That run is not going.');
       }
@@ -274,6 +296,46 @@ export async function startUi(options: {
                 ...entry.run,
                 status: effectiveStatus(root, entry.run),
                 actor_name: names.get(entry.run.actor) ?? null,
+              },
+            }
+          : {}),
+        activity,
+        stop_requested: stop.trim() === entry.id,
+      });
+    }
+    if (path === '/api/interview-runs') {
+      const [runs, names] = await Promise.all([readInterviewRuns(root), actorNames(root)]);
+      return json(
+        res,
+        runs.map((e) => ('run' in e ? interviewSummary(root, e.run, names) : e))
+      );
+    }
+    const interviewMatch = path.match(/^\/api\/interview-runs\/([^/]+)$/);
+    if (interviewMatch) {
+      const entry = await readInterviewRun(root, decodeURIComponent(interviewMatch[1]!));
+      if (!entry) return send(res, 404, 'No such interview');
+      const activity = await readFile(
+        join(root, 'interview-runs', entry.id, 'activity.jsonl'),
+        'utf8'
+      )
+        .then((text) =>
+          text
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => JSON.parse(line))
+        )
+        .catch(() => []);
+      const stop = await readFile(join(root, '.live', 'stop'), 'utf8').catch(() => '');
+      const names = 'run' in entry ? await actorNames(root) : new Map<string, string>();
+      return json(res, {
+        ...entry,
+        ...('run' in entry
+          ? {
+              run: {
+                ...entry.run,
+                status: effectiveStatus(root, entry.run),
+                actor_name: names.get(entry.run.actor) ?? null,
+                usability_score: scoreInterview(entry.run),
               },
             }
           : {}),
