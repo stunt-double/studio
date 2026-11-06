@@ -27,15 +27,8 @@ export function checkLine(check: Check): string {
   return `- [${check.key}] ${checkLabel(check)} ${check.description}`;
 }
 
-export function buildBrief(input: {
-  actor: Actor;
-  checklist: Checklist;
-  url: string;
-  /** The checks still to judge: all of them, or on a resume the ones without a verdict. */
-  checks: Check[];
-  resumed: boolean;
-}): string {
-  const { actor, checklist, url, checks, resumed } = input;
+/** Who the actor is and what it knows: the opening of every brief. */
+export function personaBlocks(actor: Actor): string[] {
   const persona = [
     `You are ${actor.name}${actor.description ? `: ${actor.description.replace(/[.\s]+$/, '')}` : ''}.`,
     actor.system_prompt ?? '',
@@ -48,9 +41,20 @@ export function buildBrief(input: {
         ...actor.knowledge.map((k) => `### ${k.title} (${k.kind})\n${k.content}`),
       ].join('\n')
     : '';
+  return [persona, knowledge].filter(Boolean);
+}
+
+export function buildBrief(input: {
+  actor: Actor;
+  checklist: Checklist;
+  url: string;
+  /** The checks still to judge: all of them, or on a resume the ones without a verdict. */
+  checks: Check[];
+  resumed: boolean;
+}): string {
+  const { actor, checklist, url, checks, resumed } = input;
   return [
-    persona,
-    knowledge,
+    ...personaBlocks(actor),
     `Your task: ${checklist.instructions}`,
     `Start at ${url}${resumed ? ' (this run is resuming: earlier verdicts stand, judge only the checks below)' : ''}.`,
     `Checks to judge:\n${checks.map(checkLine).join('\n')}`,

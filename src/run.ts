@@ -3,9 +3,11 @@
 //
 // Everything a run produces is a file under `.stuntdouble/runs/<id>/`, written
 // as it happens: `run.json` is rewritten atomically after every verdict, and
-// `activity.jsonl` gains a line per tool call. A run whose process dies stays
-// `running` on disk with no live marker (files.ts `isLive`), and the next
-// start_run marks it interrupted, so it can be resumed.
+// `activity.jsonl` gains a line per tool call. A browser step's line also says
+// where the page landed, how long the page kept it waiting, and, for a step
+// that moves the page, names a small picture of it under `steps/`. A run whose
+// process dies stays `running` on disk with no live marker (files.ts
+// `isLive`), and the next start_run marks it interrupted, so it can be resumed.
 
 import {
   DirectBrowserTools,
@@ -20,20 +22,25 @@ import { join } from 'node:path';
 
 import pkg from '../package.json' with { type: 'json' };
 import { buildBrief, checkLabel } from './brief.ts';
-import { type LaunchOptions, type LocalDriver, PlaywrightDriver } from './driver.ts';
+import { type LaunchOptions, type LocalDriver, type PageWait, PlaywrightDriver } from './driver.ts';
 import { cleanLocator, focusEvidence } from './evidence.ts';
 import {
   type Actor,
   ActorSchema,
   appendJsonl,
+  type BrowserConfig,
   type Check,
   type Checklist,
   ChecklistSchema,
   type Config,
   ConfigSchema,
   effectiveStatus,
+  type Interview,
+  type InterviewRun,
+  InterviewSchema,
   isLive,
   type Locator,
+  readInterviewRuns,
   readJson,
   readRuns,
   type Result,
@@ -44,6 +51,14 @@ import {
   writeFileAtomic,
   writeJsonAtomic,
 } from './files.ts';
+import {
+  buildInterviewBrief,
+  describeScore,
+  guideItems,
+  itemText,
+  questionnaireText,
+  scoreInterview,
+} from './interview.ts';
 import { findStudio, studioLink } from './studio-link.ts';
 import { startUi, type UiExtension, type UiServer } from './ui-server.ts';
 import { resolveSkippedChecks } from './vendor/scoring/conditions.ts';
@@ -53,6 +68,7 @@ import {
   newChecklistScoring,
   scoreChecklistRun,
 } from './vendor/scoring/scoring.ts';
+import { usabilityItems } from './vendor/usability/usability.ts';
 
 export const PACKAGE = `${pkg.name}@${pkg.version}`;
 
@@ -71,6 +87,36 @@ const PRIVATE_REFUSED =
 const SETUP = 'Run /stuntdouble setup to create one.';
 /** activity.jsonl is committed, so a page read is kept to its opening lines. */
 const LOG_TEXT_CHARS = 500;
+const LOG_TITLE_CHARS = 200;
+/**
+ * The run.json revision this version writes. `format` stays `stuntdouble.run/1`
+ * so earlier viewers still read the run; revision 2 adds `page`, `waits`, `ms`
+ * and `shot` to browser steps in activity.jsonl.
+ */
+export const RUN_REVISION = 2;
+/**
+ * Tools whose step keeps no picture: those that only read the page, which
+ * cannot have moved, and those that type, whose picture would show the value
+ * `redactInput` keeps out of the log (an email, a code, a card number).
+ */
+const NO_PICTURE_TOOLS = new Set([
+  'read_page',
+  'find',
+  'get_page_text',
+  'screenshot',
+  'type',
+  'form_input',
+]);
+/** How long a step waits for the page's title or its picture before leaving it out. */
+const STEP_RECORD_TIMEOUT_MS = 2_000;
+
+/** What a browser step adds to its activity line. */
+type StepRecord = {
+  ms: number;
+  page?: { url: string; title: string };
+  waits?: PageWait[];
+  shot?: string;
+};
 
 const PRESETS = {
   desktop: { width: 1280, height: 720, touch: false },
@@ -80,8 +126,6 @@ const PRESETS = {
 
 type Active = {
   dir: string;
-  run: Run;
-  checklist: Checklist;
   actor: Actor;
   driver: LocalDriver;
   trusted: DirectBrowserTools;
@@ -92,7 +136,14 @@ type Active = {
   tempProfile: string | null;
   everyScreenshot: boolean;
   stopped: boolean;
-};
+  /** Step pictures saved so far, so a resumed run numbers on from the last. */
+  shots: number;
+} & (
+  | { kind: 'checklist'; run: Run; checklist: Checklist }
+  | { kind: 'interview'; run: InterviewRun; interview: Interview }
+);
+type ChecklistActive = Extract<Active, { kind: 'checklist' }>;
+type InterviewActive = Extract<Active, { kind: 'interview' }>;
 
 /** The checklist URL with its origin swapped for `local_base_url`. */
 export function rebase(url: string, localBase: string | null | undefined): string {
@@ -177,7 +228,8 @@ export class LocalSession {
   async overview(): Promise<string> {
     const link = await this.openUi();
     const runs = (await readRuns(this.root)).slice(0, 5);
-    if (runs.length === 0) return `${link}\n\nNo runs yet.`;
+    const interviews = await this.interviewOverview();
+    if (runs.length === 0) return [link, 'No runs yet.', interviews].filter(Boolean).join('\n\n');
     const lines = runs.map((e) => {
       if (!('run' in e)) return `- ${e.id}: unreadable (${e.error.split('\n')[0]})`;
       const { run } = e;
@@ -186,7 +238,23 @@ export class LocalSession {
       const outcome = run.score ? `${status}, ${run.score.outcome}` : status;
       return `- ${run.checklist}: ${outcome}, ${t.passed}/${t.total} checks passed, started ${ago(run.started_at)} (${run.id})`;
     });
-    return [link, `Latest runs, newest first:\n${lines.join('\n')}`].join('\n\n');
+    return [link, `Latest runs, newest first:\n${lines.join('\n')}`, interviews]
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  /** A line on each of the latest interview sessions, or nothing when there are none. */
+  private async interviewOverview(): Promise<string> {
+    const sessions = (await readInterviewRuns(this.root)).slice(0, 5);
+    if (sessions.length === 0) return '';
+    const lines = sessions.map((e) => {
+      if (!('run' in e)) return `- ${e.id}: unreadable (${e.error.split('\n')[0]})`;
+      const { run } = e;
+      const total = guideItems(run.interview_snapshot).length;
+      const score = scoreInterview(run);
+      return `- ${run.interview}: ${effectiveStatus(this.root, run)}, ${run.transcript.length}/${total} items answered${score ? `, ${describeScore(score)}` : ''}, started ${ago(run.started_at)} (${run.id})`;
+    });
+    return `Latest interviews, newest first:\n${lines.join('\n')}`;
   }
 
   async startRun(input: { checklist: string; resume?: boolean }): Promise<string> {
@@ -194,13 +262,7 @@ export class LocalSession {
     if (!/^[a-z0-9][a-z0-9-]*$/.test(input.checklist)) {
       throw new Error(`"${input.checklist}" is not a checklist slug (checklists/<slug>.json).`);
     }
-    const config: Config = await readJson(
-      join(this.root, 'stuntdouble.json'),
-      ConfigSchema,
-      '.stuntdouble/stuntdouble.json'
-    ).catch((err: Error) => {
-      throw /file not found$/.test(err.message) ? new Error(`${err.message}. ${SETUP}`) : err;
-    });
+    const config = await this.readConfig();
     let checklist = await readJson(
       join(this.root, 'checklists', `${input.checklist}.json`),
       ChecklistSchema,
@@ -241,6 +303,7 @@ export class LocalSession {
       run = {
         ...entry.run,
         runner: this.client ? { ...entry.run.runner, client: this.client } : entry.run.runner,
+        revision: RUN_REVISION,
         results: entry.run.results.filter((r) => r.evidence !== NOT_JUDGED),
         status: 'running',
         pid: process.pid,
@@ -252,6 +315,7 @@ export class LocalSession {
       dir = '';
       run = {
         format: 'stuntdouble.run/1',
+        revision: RUN_REVISION,
         id: '',
         runner: {
           ...this.runnerFields,
@@ -275,83 +339,24 @@ export class LocalSession {
       };
     }
 
-    const trusted = [run.url, checklist.url, config.local_base_url]
-      .filter((u): u is string => Boolean(u))
-      .map((u) => new URL(u));
-    const trustedHosts = [...new Set(trusted.map((u) => u.hostname))];
-    // A private host is trusted by exact origin: trusting localhost:3000 must not
-    // open every other local service (the viewer, a database console) to the actor.
-    const trustedOrigins = new Set(trusted.map((u) => u.origin));
-    const refuseNavigation = (href: string) => {
-      const url = URL.parse(href);
-      return url && isPrivateHost(url.hostname) && !trustedOrigins.has(url.origin)
-        ? PRIVATE_REFUSED
-        : null;
-    };
-    const preset = PRESETS[checklist.browser_config?.preset ?? 'desktop'];
-    const toolOptions: DirectBrowserToolsOptions = {
-      viewport: checklist.browser_config?.viewport ?? preset,
-      allowPrivateHosts: true,
-      checkNavigation: refuseNavigation,
-    };
-
     // The browser first: a run folder is only made for a run that can start.
-    const tempProfile = actor.persist_login
-      ? null
-      : await mkdtemp(join(tmpdir(), 'stuntdouble-profile-'));
-    // Kept per project: two projects with a `shopper` must not share its cookies.
-    const project = createHash('sha256').update(this.root).digest('hex').slice(0, 12);
-    const profileDir =
-      tempProfile ?? join(homedir(), '.stuntdouble', 'profiles', project, checklist.actor);
-    await mkdir(profileDir, { recursive: true });
-    let driver: LocalDriver;
-    try {
-      driver = await this.launch({
-        profileDir,
-        headless: config.headless,
-        viewport: toolOptions.viewport,
-        touch: checklist.browser_config?.touch ?? preset.touch,
-        locale: checklist.browser_config?.locale,
-        refuseNavigation,
-      });
-    } catch (err) {
-      if (tempProfile) await rm(tempProfile, { recursive: true, force: true });
-      throw err;
-    }
-
-    if (!input.resume) {
-      await mkdir(join(this.root, 'runs'), { recursive: true });
-      // Two runs started in the same second get a suffix rather than one folder.
-      for (let n = 1; !dir; n++) {
-        const id = `${stamp()}-${input.checklist}${n > 1 ? `-${n}` : ''}`;
-        const made = await mkdir(join(this.root, 'runs', id)).then(
-          () => true,
-          (err: NodeJS.ErrnoException) => {
-            if (err.code === 'EEXIST') return false;
-            throw err;
-          }
-        );
-        if (made) [run.id, dir] = [id, join(this.root, 'runs', id)];
-      }
-    }
-    const gitignore = join(this.root, '.gitignore');
-    if (!(await stat(gitignore).catch(() => null))) await writeFileAtomic(gitignore, '.live/\n');
-
+    const browser = await this.openBrowser({
+      config,
+      actor,
+      actorSlug: checklist.actor,
+      urls: [run.url, checklist.url],
+      browserConfig: checklist.browser_config,
+    });
+    if (!input.resume) [run.id, dir] = await this.newRunDir('runs', input.checklist);
     this.active = {
+      ...browser,
+      kind: 'checklist',
       dir,
       run,
       checklist,
       actor,
-      driver,
-      trusted: new DirectBrowserTools(driver, toolOptions),
-      guarded:
-        config.safety === 'third_party'
-          ? new DirectBrowserTools(driver, { ...toolOptions, safety: INDEX_SESSION_SAFETY })
-          : null,
-      trustedHosts,
-      tempProfile,
-      everyScreenshot: config.model_screenshots === 'every_action',
       stopped: false,
+      shots: input.resume ? await lastShot(join(dir, 'steps')) : 0,
     };
     this.finished = null;
     await this.save();
@@ -382,6 +387,99 @@ export class LocalSession {
       .join('\n\n');
   }
 
+  /**
+   * Chrome for a run or an interview, on a fresh profile (or the actor's kept
+   * one), with private addresses refused except the app under test's exact
+   * origins: trusting localhost:3000 must not open every other local service
+   * (the viewer, a database console) to the actor.
+   */
+  private async openBrowser(input: {
+    config: Config;
+    actor: Actor;
+    actorSlug: string;
+    urls: string[];
+    browserConfig: BrowserConfig | undefined;
+  }): Promise<
+    Pick<
+      Active,
+      'driver' | 'trusted' | 'guarded' | 'trustedHosts' | 'tempProfile' | 'everyScreenshot'
+    >
+  > {
+    const { config, actor, browserConfig } = input;
+    const trusted = [...input.urls, config.local_base_url]
+      .filter((u): u is string => Boolean(u))
+      .map((u) => new URL(u));
+    const trustedOrigins = new Set(trusted.map((u) => u.origin));
+    const refuseNavigation = (href: string) => {
+      const url = URL.parse(href);
+      return url && isPrivateHost(url.hostname) && !trustedOrigins.has(url.origin)
+        ? PRIVATE_REFUSED
+        : null;
+    };
+    const preset = PRESETS[browserConfig?.preset ?? 'desktop'];
+    const toolOptions: DirectBrowserToolsOptions = {
+      viewport: browserConfig?.viewport ?? preset,
+      allowPrivateHosts: true,
+      checkNavigation: refuseNavigation,
+    };
+    const tempProfile = actor.persist_login
+      ? null
+      : await mkdtemp(join(tmpdir(), 'stuntdouble-profile-'));
+    // Kept per project: two projects with a `shopper` must not share its cookies.
+    const project = createHash('sha256').update(this.root).digest('hex').slice(0, 12);
+    const profileDir =
+      tempProfile ?? join(homedir(), '.stuntdouble', 'profiles', project, input.actorSlug);
+    await mkdir(profileDir, { recursive: true });
+    let driver: LocalDriver;
+    try {
+      driver = await this.launch({
+        profileDir,
+        headless: config.headless,
+        viewport: toolOptions.viewport,
+        touch: browserConfig?.touch ?? preset.touch,
+        locale: browserConfig?.locale,
+        refuseNavigation,
+      });
+    } catch (err) {
+      if (tempProfile) await rm(tempProfile, { recursive: true, force: true });
+      throw err;
+    }
+    const gitignore = join(this.root, '.gitignore');
+    if (!(await stat(gitignore).catch(() => null))) await writeFileAtomic(gitignore, '.live/\n');
+    return {
+      driver,
+      trusted: new DirectBrowserTools(driver, toolOptions),
+      guarded:
+        config.safety === 'third_party'
+          ? new DirectBrowserTools(driver, { ...toolOptions, safety: INDEX_SESSION_SAFETY })
+          : null,
+      trustedHosts: [...new Set(trusted.map((u) => u.hostname))],
+      tempProfile,
+      everyScreenshot: config.model_screenshots === 'every_action',
+    };
+  }
+
+  /** A new folder under `runs/` or `interview-runs/`, named for when it started. */
+  private async newRunDir(folder: string, slug: string): Promise<[string, string]> {
+    await mkdir(join(this.root, folder), { recursive: true });
+    // Two started in the same second get a suffix rather than one folder. An id
+    // taken in the other folder is skipped too: the running marker and the stop
+    // flag are keyed by id alone.
+    const other = folder === 'runs' ? 'interview-runs' : 'runs';
+    for (let n = 1; ; n++) {
+      const id = `${stamp()}-${slug}${n > 1 ? `-${n}` : ''}`;
+      if (await stat(join(this.root, other, id)).catch(() => null)) continue;
+      const made = await mkdir(join(this.root, folder, id)).then(
+        () => true,
+        (err: NodeJS.ErrnoException) => {
+          if (err.code === 'EEXIST') return false;
+          throw err;
+        }
+      );
+      if (made) return [id, join(this.root, folder, id)];
+    }
+  }
+
   /** One of the browser toolset's direct tools, on the active run's browser. */
   async browserTool(name: string, input: Record<string, unknown>): Promise<ToolOutput> {
     const active = this.requireActive();
@@ -390,18 +488,22 @@ export class LocalSession {
     const host = page ? (URL.parse(await page.url())?.hostname ?? '') : '';
     const tools =
       active.guarded && !isTrustedHost(host, active.trustedHosts) ? active.guarded : active.trusted;
+    active.driver.takeWaits?.(); // Waits from before this step are not its own.
+    const started = performance.now();
     const result = await tools.run(name, input);
+    const ms = Math.round(performance.now() - started);
     // The browser refused a navigation the tool did not make itself (driver.ts).
     // A redirect may have shown the page for a moment, so nothing read is kept.
     const refusal = active.driver.takeRefusal();
     if (refusal) {
       const text = `Error: Navigation refused. ${refusal}`;
-      await this.log(name, redactInput(name, input), text);
+      active.driver.takeWaits?.();
+      await this.log(name, redactInput(name, input), text, { ms });
       return { text, isError: true };
     }
     if (result.screenshotBase64)
       await this.saveFrame(Buffer.from(result.screenshotBase64, 'base64'));
-    await this.log(name, redactInput(name, input), result.text);
+    await this.log(name, redactInput(name, input), result.text, await this.stepRecord(name, ms));
     const image =
       result.screenshotBase64 && (name === 'screenshot' || active.everyScreenshot)
         ? result.screenshotBase64
@@ -416,7 +518,7 @@ export class LocalSession {
     locator?: Locator;
   }): Promise<string> {
     if (!this.active && this.finished) return this.alreadyFinished();
-    const active = this.requireActive();
+    const active = this.requireChecklist();
     if (await this.stopRequested(active)) throw new Error(STOPPED);
     const { run, checklist } = active;
     const check = checklist.checks.find((c) => c.key === input.check);
@@ -507,7 +609,7 @@ export class LocalSession {
 
   async finishRun(input: { summary: string }): Promise<string> {
     if (!this.active && this.finished) return this.alreadyFinished();
-    const active = this.requireActive();
+    const active = this.requireChecklist();
     const stopped = await this.stopRequested(active);
     const { run, checklist } = active;
     for (const s of this.conditionSkips(new Map(run.results.map((r) => [r.check, r.status])))) {
@@ -559,11 +661,278 @@ export class LocalSession {
   }
 
   /**
+   * start_interview: Chrome at the interview's URL, the actor's brief and the
+   * first item. With resume, the newest interrupted or stopped session of that
+   * interview carries on from its first unanswered item.
+   */
+  async startInterview(input: { interview: string; resume?: boolean }): Promise<string> {
+    if (this.active) {
+      const { run } = this.active;
+      if (this.active.kind === 'interview' && input.resume) {
+        const active = this.requireInterview();
+        if (active.run.interview === input.interview) {
+          active.stopped = false;
+          active.run.status = 'running';
+          await this.clearStop(active.run.id);
+          await this.save();
+          await this.markRunning();
+          await this.log('start_interview', input, 'Resumed');
+          return [
+            `Interview ${active.run.id} resumed.`,
+            buildInterviewBrief({
+              actor: active.actor,
+              interview: active.interview,
+              start: active.run.url,
+              answered: active.run.transcript.length,
+            }),
+            'The browser is still open where the interview left off: read the page before acting.',
+            this.nextInterviewStep(),
+          ].join('\n\n');
+        }
+      }
+      throw new Error(
+        this.active.kind === 'interview'
+          ? `Interview ${run.id} is still going: carry on with answer_item, or end it with finish_interview.`
+          : `Run ${run.id} is still going: finish it with finish_run first.`
+      );
+    }
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(input.interview)) {
+      throw new Error(`"${input.interview}" is not an interview slug (interviews/<slug>.json).`);
+    }
+    const config = await this.readConfig();
+    let interview = await readJson(
+      join(this.root, 'interviews', `${input.interview}.json`),
+      InterviewSchema,
+      `.stuntdouble/interviews/${input.interview}.json`
+    ).catch(async (err: Error) => {
+      if (!/file not found$/.test(err.message)) throw err;
+      const slugs = (await readdir(join(this.root, 'interviews')).catch(() => []))
+        .filter((f) => f.endsWith('.json'))
+        .map((f) => f.slice(0, -'.json'.length));
+      throw new Error(
+        `${err.message}. ${slugs.length ? `The interviews here are: ${slugs.join(', ')}.` : 'Write one first: a name, an actor, a url and sections of questions and tasks.'}`
+      );
+    });
+    const actor = await readJson(
+      join(this.root, 'actors', `${interview.actor}.json`),
+      ActorSchema,
+      `.stuntdouble/actors/${interview.actor}.json`
+    );
+    await this.markInterrupted();
+
+    let run: InterviewRun;
+    let dir = '';
+    if (input.resume) {
+      const entry = (await readInterviewRuns(this.root)).find(
+        (e) =>
+          'run' in e &&
+          e.run.interview === input.interview &&
+          (e.run.status === 'interrupted' || e.run.status === 'stopped')
+      );
+      if (!entry || !('run' in entry)) {
+        throw new Error(`No interrupted or stopped session of ${input.interview} to resume.`);
+      }
+      dir = join(this.root, 'interview-runs', entry.id);
+      // A resumed session asks the guide it started with.
+      interview = InterviewSchema.parse(entry.run.interview_snapshot);
+      await this.clearStop(entry.id);
+      run = {
+        ...entry.run,
+        runner: this.client ? { ...entry.run.runner, client: this.client } : entry.run.runner,
+        status: 'running',
+        pid: process.pid,
+        finished_at: null,
+        summary: null,
+      };
+    } else {
+      run = {
+        format: 'stuntdouble.interview/1',
+        id: '',
+        runner: {
+          ...this.runnerFields,
+          ...(this.client ? { client: this.client } : {}),
+          kind: 'local',
+          package: PACKAGE,
+          judged: false,
+        },
+        status: 'running',
+        pid: process.pid,
+        url: rebase(interview.url, config.local_base_url),
+        started_at: now(),
+        finished_at: null,
+        interview: input.interview,
+        actor: interview.actor,
+        interview_snapshot: withoutCloud(interview),
+        transcript: [],
+        usability: null,
+        summary: null,
+      };
+    }
+
+    const browser = await this.openBrowser({
+      config,
+      actor,
+      actorSlug: interview.actor,
+      urls: [run.url, interview.url],
+      browserConfig: interview.browser_config,
+    });
+    if (!input.resume) [run.id, dir] = await this.newRunDir('interview-runs', input.interview);
+    this.active = {
+      ...browser,
+      kind: 'interview',
+      dir,
+      run,
+      interview,
+      actor,
+      stopped: false,
+      shots: input.resume ? await lastShot(join(dir, 'steps')) : 0,
+    };
+    this.finished = null;
+    await this.save();
+    await this.markRunning();
+    await this.log('start_interview', input, input.resume ? 'Resumed' : 'Started');
+
+    const opened = await this.browserTool('navigate', { url: run.url });
+    return [
+      `Interview ${run.id} ${input.resume ? 'resumed' : 'started'}. It is written to .stuntdouble/interview-runs/${run.id}/.`,
+      buildInterviewBrief({ actor, interview, start: run.url, answered: run.transcript.length }),
+      // Not the navigate result: this reply is read by the main session, which never reads page content.
+      opened.isError
+        ? `The start page did not load: ${opened.text}\nTry navigate again, and answer the items you cannot reach by saying what stopped you.`
+        : `The browser is open at ${run.url}: read the page with read_page before acting.`,
+      this.nextInterviewStep(),
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  /** answer_item: the actor's answer to the current item, in character. */
+  async answerItem(input: { answer: string }): Promise<string> {
+    if (!this.active && this.finished) return this.alreadyFinished();
+    const active = this.requireInterview();
+    if (await this.stopRequested(active)) throw new Error(STOPPED);
+    const items = guideItems(active.interview);
+    const index = active.run.transcript.length;
+    const item = items[index];
+    if (!item) throw new Error(`Every item already has an answer. ${this.nextInterviewStep()}`);
+    active.run.transcript.push({
+      section: item.section,
+      item: item.item,
+      type: item.type,
+      prompt: item.prompt,
+      answer: input.answer,
+      at: now(),
+    });
+    await this.save();
+    const recorded = `Recorded the answer to item ${index + 1} of ${items.length}.`;
+    await this.log('answer_item', input, recorded);
+    return [recorded, this.nextInterviewStep()].join('\n\n');
+  }
+
+  /** rate_usability: the questionnaire, answered in character once the guide is done. */
+  async rateUsability(input: {
+    ratings: { item: string; rating: number; reason: string }[];
+  }): Promise<string> {
+    if (!this.active && this.finished) return this.alreadyFinished();
+    const active = this.requireInterview();
+    if (await this.stopRequested(active)) throw new Error(STOPPED);
+    const { run, interview } = active;
+    const scale = interview.usability_scale;
+    if (scale === 'none') {
+      throw new Error('This interview asks no questionnaire (usability_scale is "none").');
+    }
+    const left = guideItems(interview).length - run.transcript.length;
+    if (left > 0)
+      throw new Error(`Answer every item first: ${left} left. ${this.nextInterviewStep()}`);
+    if (run.usability) throw new Error('The questionnaire already has its ratings.');
+    const asked = usabilityItems(scale).map((i) => i.id);
+    const given = new Map(input.ratings.map((r) => [r.item, r]));
+    const unknown = input.ratings.filter((r) => !(asked as string[]).includes(r.item));
+    const missing = asked.filter((id) => !given.has(id));
+    if (unknown.length || missing.length || given.size !== input.ratings.length) {
+      throw new Error(
+        `Rate each statement exactly once: ${asked.join(', ')}.${missing.length ? ` Missing: ${missing.join(', ')}.` : ''}${unknown.length ? ` Not asked: ${unknown.map((r) => r.item).join(', ')}.` : ''}`
+      );
+    }
+    run.usability = {
+      scale,
+      ratings: asked.map((id) => {
+        const r = given.get(id)!;
+        return { item: id, rating: r.rating, reason: r.reason.trim() || null };
+      }),
+      answered_at: now(),
+    };
+    await this.save();
+    const score = scoreInterview(run);
+    const recorded = `Recorded the ratings${score ? `: ${describeScore(score)}` : ''}.`;
+    await this.log('rate_usability', input, recorded);
+    return [recorded, this.nextInterviewStep()].join('\n\n');
+  }
+
+  /** finish_interview: ends the session, closes the browser and returns the score. */
+  async finishInterview(input: { summary: string }): Promise<string> {
+    if (!this.active && this.finished) return this.alreadyFinished();
+    const active = this.requireInterview();
+    const stopped = await this.stopRequested(active);
+    const { run, interview } = active;
+    run.summary = input.summary;
+    run.status = stopped ? 'stopped' : 'completed';
+    run.finished_at = now();
+    await this.save();
+    await this.log('finish_interview', input, `Finished: ${run.status}`);
+    await this.endBrowser();
+
+    const total = guideItems(interview).length;
+    const score = scoreInterview(run);
+    const usability =
+      interview.usability_scale === 'none'
+        ? ''
+        : score
+          ? `Usability: ${describeScore(score)}.`
+          : 'No usability score: the questionnaire was not answered.';
+    const where = `.stuntdouble/interview-runs/${run.id}/`;
+    this.finished = { id: run.id, report: where };
+    return [
+      [
+        `Interview ${run.id} ${run.status}: ${run.transcript.length}/${total} items answered.`,
+        usability,
+        'Self-reported: the actor answered in character.',
+      ]
+        .filter(Boolean)
+        .join(' '),
+      `Transcript and ratings: ${where}interview.json`,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+  }
+
+  private nextInterviewStep(): string {
+    const { run, interview } = this.requireInterview();
+    const items = guideItems(interview);
+    const next = items[run.transcript.length];
+    if (next) return itemText(next, run.transcript.length, items.length);
+    if (interview.usability_scale !== 'none' && !run.usability) {
+      return questionnaireText(interview.usability_scale, interview.url);
+    }
+    return 'The interview is done: call finish_interview with a short summary.';
+  }
+
+  private async readConfig(): Promise<Config> {
+    return readJson(
+      join(this.root, 'stuntdouble.json'),
+      ConfigSchema,
+      '.stuntdouble/stuntdouble.json'
+    ).catch((err: Error) => {
+      throw /file not found$/.test(err.message) ? new Error(`${err.message}. ${SETUP}`) : err;
+    });
+  }
+
+  /**
    * start_run while this process still has a run open, as when the person
    * interrupts the actor: resume carries on with it in the same browser.
    */
   private async resumeActive(input: { checklist: string; resume?: boolean }): Promise<string> {
-    const active = this.requireActive();
+    const active = this.requireChecklist();
     const { run } = active;
     if (!input.resume || run.checklist !== input.checklist) {
       throw new Error(
@@ -604,7 +973,7 @@ export class LocalSession {
 
   private alreadyFinished(): string {
     const { id, report } = this.finished!;
-    return `Run ${id} has already finished: its report is at ${report}. Start another with start_run.`;
+    return `${id} has already finished: its report is at ${report}. Start another with start_run or start_interview.`;
   }
 
   private requireActive(): Active {
@@ -612,16 +981,37 @@ export class LocalSession {
     return this.active;
   }
 
+  private requireChecklist(): ChecklistActive {
+    const active = this.requireActive();
+    if (active.kind !== 'checklist') {
+      throw new Error(
+        `Interview ${active.run.id} is going, not a checklist run: carry on with answer_item, or end it with finish_interview.`
+      );
+    }
+    return active;
+  }
+
+  private requireInterview(): InterviewActive {
+    if (!this.active) throw new Error('No interview is going: call start_interview first.');
+    const active = this.active;
+    if (active.kind !== 'interview') {
+      throw new Error(
+        `Run ${active.run.id} of ${active.run.checklist} is going, not an interview: finish it with finish_run first.`
+      );
+    }
+    return active;
+  }
+
   /** Checks with no result yet, in run order. */
   private pending(): Check[] {
-    const active = this.requireActive();
+    const active = this.requireChecklist();
     const judged = new Set(active.run.results.map((r) => r.check));
     return active.checklist.checks.filter((c) => !judged.has(c.key));
   }
 
   private conditionSkips(statuses: Map<string, Result['status']>) {
     return resolveSkippedChecks({
-      checks: this.requireActive().checklist.checks.map((c) => ({
+      checks: this.requireChecklist().checklist.checks.map((c) => ({
         id: c.key,
         description: c.description,
         runCondition: c.run_condition,
@@ -660,6 +1050,14 @@ export class LocalSession {
         status: 'interrupted',
       });
     }
+    for (const entry of await readInterviewRuns(this.root)) {
+      if (!('run' in entry) || entry.run.status !== 'running') continue;
+      if (entry.run.pid !== process.pid && isLive(this.root, entry.run)) continue;
+      await writeJsonAtomic(join(this.root, 'interview-runs', entry.id, 'interview.json'), {
+        ...entry.run,
+        status: 'interrupted',
+      });
+    }
   }
 
   private async endBrowser(): Promise<void> {
@@ -685,23 +1083,91 @@ export class LocalSession {
 
   private async save(): Promise<void> {
     const active = this.requireActive();
-    await writeJsonAtomic(join(active.dir, 'run.json'), active.run);
+    const file = active.kind === 'checklist' ? 'run.json' : 'interview.json';
+    await writeJsonAtomic(join(active.dir, file), active.run);
   }
 
-  private async log(tool: string, input: unknown, text: string): Promise<void> {
+  private async log(tool: string, input: unknown, text: string, step?: StepRecord): Promise<void> {
     const active = this.requireActive();
     await appendJsonl(join(active.dir, 'activity.jsonl'), {
       at: now(),
       tool,
       input,
       text: text.length > LOG_TEXT_CHARS ? `${text.slice(0, LOG_TEXT_CHARS)}...` : text,
+      ...step,
     });
+  }
+
+  /**
+   * Where a browser step left the page, and what it waited on. Best effort: a
+   * tab that closed or a page mid-navigation leaves the field out rather than
+   * failing the step.
+   */
+  private async stepRecord(tool: string, ms: number): Promise<StepRecord> {
+    const active = this.requireActive();
+    const step: StepRecord = { ms };
+    const waits = active.driver.takeWaits?.() ?? [];
+    if (waits.length) step.waits = waits;
+    try {
+      const page = await active.driver.context.activePage();
+      if (!page) return step;
+      const [url, title] = await withTimeout(Promise.all([page.url(), page.title()]));
+      step.page = { url: withoutQuery(url), title: title.slice(0, LOG_TITLE_CHARS) };
+    } catch {
+      // Left out.
+    }
+    if (NO_PICTURE_TOOLS.has(tool) || !active.driver.thumbnail) return step;
+    try {
+      const jpeg = await withTimeout(active.driver.thumbnail());
+      if (jpeg) {
+        // Numbered before the write, so no two steps can share a name.
+        const shot = `steps/${String(++active.shots).padStart(4, '0')}.jpg`;
+        await writeFileAtomic(join(active.dir, shot), jpeg);
+        step.shot = shot;
+      }
+    } catch {
+      // Left out.
+    }
+    return step;
   }
 
   /** The viewer's live frame, best effort. ponytail: one per project, so two sessions running at once share it. */
   private async saveFrame(png: Uint8Array): Promise<void> {
     await writeFileAtomic(join(this.root, '.live', 'latest.png'), png).catch(() => {});
   }
+}
+
+/**
+ * A page address without its query or fragment: activity.jsonl is committed,
+ * and a redirect can carry a sign-in code or a token there.
+ */
+export function withoutQuery(url: string): string {
+  const parsed = URL.parse(url);
+  return parsed
+    ? `${parsed.origin === 'null' ? parsed.protocol : parsed.origin}${parsed.pathname}`
+    : url;
+}
+
+/** A definition as a run keeps it: the ids of a cloud push are not part of what ran. */
+function withoutCloud<T extends { cloud?: unknown }>(definition: T): Omit<T, 'cloud'> {
+  const { cloud: _cloud, ...rest } = definition;
+  return rest;
+}
+
+/** The highest step picture number in `dir`, so a resumed run never writes over one. */
+async function lastShot(dir: string): Promise<number> {
+  const files = await readdir(dir).catch(() => [] as string[]);
+  return Math.max(0, ...files.map((f) => Number(/^(\d+)\.jpg$/.exec(f)?.[1] ?? 0)));
+}
+
+function withTimeout<T>(work: Promise<T>): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('timed out')), STEP_RECORD_TIMEOUT_MS);
+    }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 /**

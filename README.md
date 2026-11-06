@@ -105,7 +105,9 @@ The MCP tools are listed in [docs/coding-agents.md](docs/coding-agents.md#tools)
   stuntdouble.json          the app's local address, headless, screenshots and safety settings
   actors/<slug>.json        who the actor is
   checklists/<slug>.json    where it starts, what it does and the checks
-  runs/<stamp>-<checklist>/ run.json, activity.jsonl, shots/<check>.png
+  runs/<stamp>-<checklist>/ run.json, activity.jsonl, shots/<check>.png, steps/<n>.jpg
+  interviews/<slug>.json    a research interview guide, with a UMUX questionnaire at the end
+  interview-runs/<stamp>-<interview>/ each session's transcript and ratings
   .live/                    the running viewer's state (not committed)
 ```
 

@@ -25,6 +25,7 @@ import {
   MAX_SCORE_UNIT_LENGTH,
   MIN_CHECK_WEIGHT,
 } from './vendor/scoring/scoring.ts';
+import { USABILITY_SCALES } from './vendor/usability/usability.ts';
 
 export const projectDir = (): string => process.env.STUNTDOUBLE_PROJECT_DIR || process.cwd();
 export const sdDir = (project: string): string => join(project, '.stuntdouble');
@@ -89,6 +90,19 @@ const CheckSchema = z.strictObject({
 });
 export type Check = z.infer<typeof CheckSchema>;
 
+const BrowserConfigSchema = z.strictObject({
+  preset: z.enum(['desktop', 'tablet', 'mobile']).optional(),
+  viewport: z
+    .strictObject({
+      width: z.int().min(320).max(2560),
+      height: z.int().min(320).max(2560),
+    })
+    .optional(),
+  touch: z.boolean().optional(),
+  locale: z.string().optional(),
+});
+export type BrowserConfig = z.infer<typeof BrowserConfigSchema>;
+
 export const ChecklistSchema = z.strictObject({
   name: z.string().min(1).max(200),
   actor: slug,
@@ -112,25 +126,48 @@ export const ChecklistSchema = z.strictObject({
     )
     .max(MAX_SCORE_BANDS)
     .optional(),
-  browser_config: z
-    .strictObject({
-      preset: z.enum(['desktop', 'tablet', 'mobile']).optional(),
-      viewport: z
-        .strictObject({
-          width: z.int().min(320).max(2560),
-          height: z.int().min(320).max(2560),
-        })
-        .optional(),
-      touch: z.boolean().optional(),
-      locale: z.string().optional(),
-    })
-    .optional(),
+  browser_config: BrowserConfigSchema.optional(),
   // Cloud run settings, accepted so the file stays a valid hosted input. Unused locally.
   record_session: z.boolean().optional(),
   run_mode: z.enum(['code', 'agentic']).optional(),
   cloud,
 });
 export type Checklist = z.infer<typeof ChecklistSchema>;
+
+/**
+ * An interview guide: sections of questions and tasks the actor answers in
+ * character, then a usability questionnaire. The fields follow the hosted
+ * interview's (sections, items of `question` or `task`, `usability_scale`),
+ * flattened into one file.
+ */
+export const InterviewSchema = z.strictObject({
+  name: z.string().min(1).max(200),
+  actor: slug,
+  url: z.url({ protocol: /^https?$/ }),
+  research_brief: z.string().optional(),
+  /** The questionnaire after the guide. UMUX unless set, as in the cloud. */
+  usability_scale: z.enum(USABILITY_SCALES).default('umux'),
+  sections: z
+    .array(
+      z.strictObject({
+        title: z.string().min(1),
+        intro: z.string().optional(),
+        items: z
+          .array(
+            z.strictObject({
+              type: z.enum(['question', 'task']).default('question'),
+              prompt: z.string().min(1),
+              expected_evidence: z.string().optional(),
+            })
+          )
+          .min(1),
+      })
+    )
+    .min(1),
+  browser_config: BrowserConfigSchema.optional(),
+  cloud,
+});
+export type Interview = z.infer<typeof InterviewSchema>;
 
 export const RUN_STATUSES = ['running', 'completed', 'stopped', 'interrupted', 'failed'] as const;
 export const RESULT_STATUSES = ['passed', 'failed', 'informational', 'error', 'skipped'] as const;
@@ -151,31 +188,38 @@ const ResultSchema = z.object({
 });
 export type Result = z.infer<typeof ResultSchema>;
 
+const RunnerSchema = z.object({
+  kind: z.enum(['local', 'cloud']),
+  package: z.string().optional(),
+  /** False for a local run: the actor judged its own verdicts. */
+  judged: z.boolean(),
+  run_id: z.string().optional(),
+  url: z.string().optional(),
+  /** The MCP client that started a local run (Claude Code, Codex, ...), from its `initialize`. */
+  client: z.object({ name: z.string(), version: z.string() }).optional(),
+  /** A standalone Studio run: the model on the person's own connection. */
+  model: z.object({ provider: z.string(), id: z.string() }).optional(),
+  /** What a standalone run used, when the provider reports it. */
+  usage: z
+    .object({
+      steps: z.number(),
+      input_tokens: z.number(),
+      output_tokens: z.number(),
+      cache_read_tokens: z.number().optional(),
+      cost_usd: z.number().nullish(),
+    })
+    .optional(),
+});
+
 export const RunSchema = z.object({
   format: z.literal('stuntdouble.run/1'),
+  /**
+   * Additions within format 1, so earlier viewers still read the file. Absent
+   * is 1. 2: activity.jsonl browser steps carry `ms`, `page`, `waits` and `shot`.
+   */
+  revision: z.int().min(1).optional(),
   id: z.string(),
-  runner: z.object({
-    kind: z.enum(['local', 'cloud']),
-    package: z.string().optional(),
-    /** False for a local run: the actor judged its own verdicts. */
-    judged: z.boolean(),
-    run_id: z.string().optional(),
-    url: z.string().optional(),
-    /** The MCP client that started a local run (Claude Code, Codex, ...), from its `initialize`. */
-    client: z.object({ name: z.string(), version: z.string() }).optional(),
-    /** A standalone Studio run: the model on the person's own connection. */
-    model: z.object({ provider: z.string(), id: z.string() }).optional(),
-    /** What a standalone run used, when the provider reports it. */
-    usage: z
-      .object({
-        steps: z.number(),
-        input_tokens: z.number(),
-        output_tokens: z.number(),
-        cache_read_tokens: z.number().optional(),
-        cost_usd: z.number().nullish(),
-      })
-      .optional(),
-  }),
+  runner: RunnerSchema,
   status: z.enum(RUN_STATUSES),
   pid: z.number().optional(),
   url: z.string(),
@@ -200,6 +244,51 @@ export const RunSchema = z.object({
   cloud: z.unknown().nullable(),
 });
 export type Run = z.infer<typeof RunSchema>;
+
+const UsabilityRatingSchema = z.object({
+  item: z.enum(['capabilities', 'frustration', 'ease', 'correction']),
+  rating: z.int().min(1).max(7),
+  reason: z.string().nullable(),
+});
+
+/**
+ * One interview session, `interview-runs/<id>/interview.json`. Kept out of
+ * `runs/`, which every viewer reads as checklist runs. Only the ratings are
+ * stored: the score is worked out on reading, by the vendored scorer, as the
+ * cloud does.
+ */
+export const InterviewRunSchema = z.object({
+  format: z.literal('stuntdouble.interview/1'),
+  id: z.string(),
+  runner: RunnerSchema,
+  status: z.enum(RUN_STATUSES),
+  pid: z.number().optional(),
+  url: z.string(),
+  started_at: z.string().nullable(),
+  finished_at: z.string().nullable(),
+  interview: z.string(),
+  actor: z.string(),
+  interview_snapshot: InterviewSchema.omit({ cloud: true }),
+  transcript: z.array(
+    z.object({
+      section: z.int().min(0),
+      item: z.int().min(0),
+      type: z.enum(['question', 'task']),
+      prompt: z.string(),
+      answer: z.string(),
+      at: z.string(),
+    })
+  ),
+  usability: z
+    .object({
+      scale: z.enum(['umux', 'umux_lite']),
+      ratings: z.array(UsabilityRatingSchema),
+      answered_at: z.string().nullable(),
+    })
+    .nullable(),
+  summary: z.string().nullable(),
+});
+export type InterviewRun = z.infer<typeof InterviewRunSchema>;
 
 /** Every problem in a file, one per line, as `file: field.path: message`. */
 export function describeIssues(file: string, error: z.ZodError): string {
@@ -294,7 +383,7 @@ export function isAlive(pid: number | undefined): boolean {
 export const runningMarker = (root: string, id: string): string =>
   join(root, '.live', 'running', id);
 
-export function isLive(root: string, run: Run): boolean {
+export function isLive(root: string, run: Pick<Run, 'id' | 'pid'>): boolean {
   let marker: string;
   try {
     marker = readFileSync(runningMarker(root, run.id), 'utf8').trim();
@@ -305,8 +394,10 @@ export function isLive(root: string, run: Run): boolean {
 }
 
 /** A run left `running` by a process that has gone is an interrupted run. */
-export const effectiveStatus = (root: string, run: Run): Run['status'] =>
-  run.status === 'running' && !isLive(root, run) ? 'interrupted' : run.status;
+export const effectiveStatus = (
+  root: string,
+  run: Pick<Run, 'id' | 'pid' | 'status'>
+): Run['status'] => (run.status === 'running' && !isLive(root, run) ? 'interrupted' : run.status);
 
 /** Passed over scored checks, as the scorer counts them: informational and skipped left out. */
 export function tallyRun(run: Pick<Run, 'checklist_snapshot' | 'results'>): {
@@ -352,4 +443,36 @@ export async function readRuns(root: string): Promise<RunEntry[]> {
       })
   );
   return entries.sort((a, b) => (a.id < b.id ? 1 : -1));
+}
+
+export type InterviewRunEntry = { id: string; run: InterviewRun } | { id: string; error: string };
+
+/** Every interview session under `interview-runs/`, newest first. */
+export async function readInterviewRuns(root: string): Promise<InterviewRunEntry[]> {
+  const ids = await readdir(join(root, 'interview-runs')).catch(() => [] as string[]);
+  const entries = await Promise.all(
+    ids.filter((id) => !id.startsWith('.')).map((id) => readInterviewRunAt(root, id))
+  );
+  return entries.sort((a, b) => (a.id < b.id ? 1 : -1));
+}
+
+/** One interview session, by folder name. A name that is not one is a miss. */
+export async function readInterviewRun(
+  root: string,
+  id: string
+): Promise<InterviewRunEntry | null> {
+  if (!/^[\w.-]+$/.test(id) || id.startsWith('.')) return null;
+  if (!(await lstat(join(root, 'interview-runs', id)).catch(() => null))) return null;
+  return readInterviewRunAt(root, id);
+}
+
+async function readInterviewRunAt(root: string, id: string): Promise<InterviewRunEntry> {
+  try {
+    return {
+      id,
+      run: await readJson(join(root, 'interview-runs', id, 'interview.json'), InterviewRunSchema),
+    };
+  } catch (err) {
+    return { id, error: (err as Error).message };
+  }
 }

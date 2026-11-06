@@ -4,7 +4,17 @@
  */
 
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -18,7 +28,7 @@ import {
   RunSchema,
   writeFileAtomic,
 } from '../src/files.ts';
-import { isTrustedHost, LocalSession, rebase } from '../src/run.ts';
+import { isTrustedHost, LocalSession, rebase, withoutQuery } from '../src/run.ts';
 
 /** A page that shows `visible` and nothing else. */
 function fakeBrowser(visible: string[]) {
@@ -47,6 +57,8 @@ function fakeBrowser(visible: string[]) {
   const driver = {
     context: { activePage: async () => page, pages: async () => [page] },
     takeRefusal: () => null,
+    takeWaits: () => [{ kind: 'navigation', ms: 120 }],
+    thumbnail: async () => Buffer.from([0xff, 0xd8, 0xff]),
     close: async () => {
       closed = true;
     },
@@ -425,6 +437,66 @@ test('a checklist without weights says it has no score, at start and finish', as
     /has already finished/
   );
   await session.close();
+});
+
+test('each browser step records its page, its waits and, if it moves the page, a picture', async () => {
+  const dir = await project();
+  const first = new LocalSession({ project: dir, launch: async () => fakeBrowser([]).driver });
+  await first.startRun({ checklist: 'checkout' });
+  await first.browserTool('read_page', {});
+  await first.close();
+  const [id] = await readdir(join(dir, '.stuntdouble', 'runs'));
+  const runDir = join(dir, '.stuntdouble', 'runs', id!);
+  assert.equal((await runJson(dir, id!)).revision, 2);
+
+  // A resumed run numbers its pictures on from the highest, never over one.
+  await writeFile(join(runDir, 'steps', '0003.jpg'), 'kept');
+  const second = new LocalSession({ project: dir, launch: async () => fakeBrowser([]).driver });
+  await second.startRun({ checklist: 'checkout', resume: true });
+  await second.close();
+
+  const lines = (await readFile(join(runDir, 'activity.jsonl'), 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  const steps = lines.filter((l) => l.tool !== 'start_run');
+  assert.deepEqual(
+    steps.map((l) => [l.tool, l.page, l.waits, l.shot]),
+    [
+      [
+        'navigate',
+        { url: 'http://localhost:4100/shop', title: 'Shop' },
+        [{ kind: 'navigation', ms: 120 }],
+        'steps/0001.jpg',
+      ],
+      [
+        'read_page',
+        { url: 'http://localhost:4100/shop', title: 'Shop' },
+        [{ kind: 'navigation', ms: 120 }],
+        undefined,
+      ],
+      [
+        'navigate',
+        { url: 'http://localhost:4100/shop', title: 'Shop' },
+        [{ kind: 'navigation', ms: 120 }],
+        'steps/0004.jpg',
+      ],
+    ]
+  );
+  assert.ok(steps.every((l) => typeof l.ms === 'number'));
+  // start_run is not a browser step.
+  assert.equal(lines[0].ms, undefined);
+  assert.deepEqual([...(await readFile(join(runDir, 'steps', '0004.jpg')))], [0xff, 0xd8, 0xff]);
+  assert.equal(await readFile(join(runDir, 'steps', '0003.jpg'), 'utf8'), 'kept');
+});
+
+test('a step keeps the page address without its query or fragment', () => {
+  assert.equal(
+    withoutQuery('https://app.test/callback?code=secret#token=x'),
+    'https://app.test/callback'
+  );
+  assert.equal(withoutQuery('about:blank'), 'about:blank');
+  assert.equal(withoutQuery('not a url'), 'not a url');
 });
 
 test('start_run keeps the start page out of its reply', async () => {

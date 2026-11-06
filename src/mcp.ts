@@ -131,6 +131,68 @@ export function createServer(session: LocalSession): McpServer {
   );
 
   server.registerTool(
+    'start_interview',
+    {
+      description:
+        "Start a local research interview from .stuntdouble/interviews/<interview>.json: opens a fresh Chrome at the interview's URL and returns the actor's brief and the first item. The actor answers each question or task in character with answer_item, then rates the usability statements with rate_usability (UMUX or UMUX-Lite, scored as the cloud scores them), then calls finish_interview. With resume, continues the session still open here, or else the newest interrupted or stopped session of that interview.",
+      inputSchema: {
+        interview: z.string().describe('The interview slug, e.g. "first-visit".'),
+        resume: z.boolean().optional().describe('Continue the last unfinished session instead.'),
+      },
+    },
+    (input) => attempt(() => session.startInterview(input))
+  );
+
+  server.registerTool(
+    'answer_item',
+    {
+      description:
+        "Record the actor's answer to the interview's current item, in character and in the first person. For a task, do it in the browser first, then say what happened and how it went. Returns the next item, or the usability statements once every item has an answer.",
+      inputSchema: {
+        answer: z
+          .string()
+          .min(1)
+          .describe("The answer, in the actor's own words, as they would say it."),
+      },
+    },
+    (input) => attempt(() => session.answerItem(input))
+  );
+
+  server.registerTool(
+    'rate_usability',
+    {
+      description:
+        "Record the actor's ratings of the usability statements, once every item has an answer: each statement once, by its id, from 1 (strongly disagree) to 7 (strongly agree), with a reason in character. Returns the score.",
+      inputSchema: {
+        ratings: z
+          .array(
+            z.object({
+              item: z
+                .enum(['capabilities', 'frustration', 'ease', 'correction'])
+                .describe('The statement id, as answer_item listed it.'),
+              rating: z.int().min(1).max(7),
+              reason: z.string().min(1).describe('Why, in a sentence, in character.'),
+            })
+          )
+          .min(1),
+      },
+    },
+    (input) => attempt(() => session.rateUsability(input))
+  );
+
+  server.registerTool(
+    'finish_interview',
+    {
+      description:
+        'End the interview: writes interview.json with the transcript and the ratings, closes the browser and returns the usability score. Always call it, even when stopped.',
+      inputSchema: {
+        summary: z.string().min(1).describe('One or two sentences on how the interview went.'),
+      },
+    },
+    (input) => attempt(() => session.finishInterview(input))
+  );
+
+  server.registerTool(
     'open_ui',
     {
       description:

@@ -97,6 +97,22 @@ before(async () => {
     })
   );
 
+  await mkdir(join(sd, 'interviews'), { recursive: true });
+  await writeFile(
+    join(sd, 'interviews', 'first-visit.json'),
+    JSON.stringify({
+      name: 'First visit',
+      actor: 'shopper',
+      url: 'https://shop.example.com/',
+      sections: [
+        {
+          title: 'Buying',
+          items: [{ type: 'task', prompt: 'Get to the checkout.' }, { prompt: 'How did that go?' }],
+        },
+      ],
+    })
+  );
+
   client = new Client({ name: 'e2e', version: '0.0.0' });
   await client.connect(
     new StdioClientTransport({
@@ -138,6 +154,10 @@ test('a checklist runs end to end over MCP in headless Chrome', { timeout: 60_00
       'start_run',
       'evaluate_check',
       'finish_run',
+      'start_interview',
+      'answer_item',
+      'rate_usability',
+      'finish_interview',
       'open_ui',
       'doctor',
     ]
@@ -259,6 +279,22 @@ test('a checklist runs end to end over MCP in headless Chrome', { timeout: 60_00
   assert.doesNotMatch(log, /SECRET-DATA/);
   const activity = log.trim().split('\n');
   assert.ok(activity.length >= 8, `${activity.length} activity lines`);
+  assert.equal(run.revision, 2);
+  // Each browser step says where it landed, what it waited on, and shows it small.
+  const steps = activity.map((l) => JSON.parse(l)).filter((l) => typeof l.ms === 'number');
+  const landed = steps.find((l) => l.tool === 'navigate');
+  assert.ok(landed, 'a navigate step');
+  assert.equal(landed.page.url, `${base}/`);
+  assert.equal(typeof landed.page.title, 'string');
+  assert.ok(
+    landed.waits.some((w: { kind: string; ms: number }) => w.kind === 'navigation' && w.ms >= 0)
+  );
+  assert.match(landed.shot, /^steps\/\d{4}\.jpg$/);
+  const jpeg = await readFile(join(runDir, landed.shot));
+  assert.deepEqual([...jpeg.subarray(0, 2)], [0xff, 0xd8]);
+  assert.ok(jpeg.length < 100_000, `${jpeg.length} bytes`);
+  for (const read of steps.filter((l) => l.tool === 'read_page'))
+    assert.equal(read.shot, undefined);
   for (const key of ['search-box', 'free-shipping', 'guest-checkout']) {
     const png = await readFile(join(runDir, 'shots', `${key}.png`));
     assert.equal(png.subarray(1, 4).toString(), 'PNG', key);
@@ -281,4 +317,53 @@ test('a checklist runs end to end over MCP in headless Chrome', { timeout: 60_00
   assert.equal((await fetch(`${origin}/favicon.ico`)).status, 204);
   const page = await fetch(`${origin}/runs/${id}`, { headers: { Cookie: cookie } });
   assert.match(await page.text(), /<title>Stunt Double Studio<\/title>/);
+});
+
+test('an interview runs end to end over MCP in headless Chrome, UMUX and all', async (t) => {
+  const started = await call('start_interview', { interview: 'first-visit' });
+  if (/Could not start Chrome/.test(started.text)) return t.skip('No Chrome on this machine');
+  assert.ok(!started.result.isError, started.text);
+  assert.match(started.text, /Item 1 of 2, in "Buying":\nTask: Get to the checkout\./);
+  const id = started.text.match(/Interview (\S+) started/)![1]!;
+
+  await call('navigate', {
+    url: `${new URL(started.text.match(/open at (http\S+?): read/)![1]!).origin}/checkout`,
+  });
+  await call('answer_item', { answer: 'One click on Checkout, then a guest button.' });
+  const asked = await call('answer_item', { answer: 'Quick, no account needed.' });
+  assert.match(asked.text, /Record all 4 with rate_usability/);
+  // The tool's own schema refuses a rating off the scale before the session sees it.
+  const off = await call('rate_usability', {
+    ratings: [{ item: 'ease', rating: 9, reason: 'x' }],
+  });
+  assert.ok(off.result.isError);
+  const rated = await call('rate_usability', {
+    ratings: [
+      { item: 'capabilities', rating: 5, reason: 'It sells mugs.' },
+      { item: 'frustration', rating: 3, reason: 'Not much.' },
+      { item: 'ease', rating: 6, reason: 'Two clicks.' },
+      { item: 'correction', rating: 1, reason: 'Nothing to fix.' },
+    ],
+  });
+  // 4 + 4 + 5 + 6 = 19 of 24: 79.2, an A- on the Sauro-Lewis curve.
+  assert.match(rated.text, /UMUX 79\.2, grade A- \(Excellent\)/);
+  const finished = await call('finish_interview', { summary: 'Easy guest checkout.' });
+  assert.match(finished.text, /completed: 2\/2 items answered\. Usability: UMUX 79\.2/);
+
+  const path = join(dir, '.stuntdouble', 'interview-runs', id);
+  const run = JSON.parse(await readFile(join(path, 'interview.json'), 'utf8'));
+  assert.equal(run.format, 'stuntdouble.interview/1');
+  assert.equal(run.transcript.length, 2);
+  assert.equal(run.usability.ratings.length, 4);
+  const steps = (await readFile(join(path, 'activity.jsonl'), 'utf8'))
+    .trim()
+    .split('\n')
+    .map((l) => JSON.parse(l))
+    .filter((l) => l.tool === 'navigate');
+  assert.equal(steps.length, 2);
+  assert.ok(steps.every((l) => /^steps\/\d{4}\.jpg$/.test(l.shot)));
+  assert.match(
+    (await call('open_ui')).text,
+    /Latest interviews, newest first:\n- first-visit: completed, 2\/2 items answered, UMUX 79\.2/
+  );
 });
