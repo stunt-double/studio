@@ -12,9 +12,9 @@ npx stuntdouble doctor       # Node, Chrome, the viewer port, the project, and h
 
 ```sh
 # Claude Code: the plugin starts the server for you
-claude plugin marketplace add stunt-double/stuntdouble-mcp
-claude plugin install stuntdouble@stuntdouble
-# then, in Claude Code: /stuntdouble setup, and /stuntdouble run <checklist>
+claude plugin marketplace add stunt-double/studio
+claude plugin install stuntdouble@stuntdouble-studio
+# then, in Claude Code: /stuntdouble:setup, and /stuntdouble:run <checklist>
 
 # Codex (the same as this block in ~/.codex/config.toml: [mcp_servers.stuntdouble],
 # command = "npx", args = ["-y", "stuntdouble", "mcp"], env = { STUNTDOUBLE_PROJECT_DIR = "..." })

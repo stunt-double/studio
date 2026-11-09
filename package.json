@@ -34,11 +34,11 @@
     "build": "tsup",
     "type-check": "node node_modules/@typescript/native/bin/tsc -p tsconfig.json",
     "lint": "eslint .",
-    "test": "node --test \"test/**/*.test.ts\"",
+    "test": "node --test \"test/**/*.test.ts\" \"test/**/*.test.mjs\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "changeset": "changeset",
-    "version-packages": "changeset version && pnpm install --lockfile-only",
+    "version-packages": "changeset version && node scripts/sync-plugin-version.mjs && pnpm install --lockfile-only",
     "release": "pnpm build && node scripts/publish-npm.mjs",
     "prepack": "pnpm run build"
   },
