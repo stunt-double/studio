@@ -1,6 +1,6 @@
 {
   "name": "stuntdouble",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Stunt Double Studio: create actors and checklists, run them in a local Chrome on your own model connection or from your coding agent, and keep every run as files in your project",
   "keywords": [
     "stunt-double",

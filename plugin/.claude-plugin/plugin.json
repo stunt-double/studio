@@ -1,7 +1,7 @@
 {
   "name": "stuntdouble",
   "displayName": "Stunt Double Studio",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "See where your app fails a real person, before anyone else does. An actor runs your checklist in a local Chrome, as your own Claude Code session, and brings back evidence for every check. Free, no account.",
   "author": {
     "name": "Stunt Double",

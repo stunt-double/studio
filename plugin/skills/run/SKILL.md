@@ -6,7 +6,7 @@ argument-hint: "<checklist> [resume]"
 
 # Stunt Double Studio: run
 
-`/stuntdouble:run <checklist> [resume]`, one of the Studio skills (`/stuntdouble:setup`, `/stuntdouble:run`, `/stuntdouble:open` and `/stuntdouble:doctor`). Local runs use the person's own Claude plan: this session is the actor, and the plugin's `local` MCP server (`npx stuntdouble@0.3.0 mcp`) only drives a local Chrome, writes files and serves the viewer. Nothing else calls a model, and no account is needed. Say so before the first run in a session.
+`/stuntdouble:run <checklist> [resume]`, one of the Studio skills (`/stuntdouble:setup`, `/stuntdouble:run`, `/stuntdouble:open` and `/stuntdouble:doctor`). Local runs use the person's own Claude plan: this session is the actor, and the plugin's `local` MCP server (`npx stuntdouble@0.4.0 mcp`) only drives a local Chrome, writes files and serves the viewer. Nothing else calls a model, and no account is needed. Say so before the first run in a session.
 
 Where the `local` server's tools are missing, run `/stuntdouble:doctor`. With no `.stuntdouble/stuntdouble.json`, offer `/stuntdouble:setup` first. To fix a field `start_run` names, the file format is in the `setup` skill's [files.md](../setup/files.md) (`../setup/files.md` from this skill's folder).
 
