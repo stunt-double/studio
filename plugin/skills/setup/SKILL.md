@@ -5,7 +5,7 @@ description: Set up Stunt Double Studio in this project in one pass with /stuntd
 
 # Stunt Double Studio: setup
 
-`/stuntdouble:setup`, one of the Studio skills (`/stuntdouble:setup`, `/stuntdouble:run`, `/stuntdouble:open` and `/stuntdouble:doctor`). Local runs use the person's own Claude plan: this session is the actor, and the plugin's `local` MCP server (`npx stuntdouble@0.3.0 mcp`) only drives a local Chrome, writes files and serves the viewer. Nothing else calls a model, and no account is needed. Say so before the first run in a session.
+`/stuntdouble:setup`, one of the Studio skills (`/stuntdouble:setup`, `/stuntdouble:run`, `/stuntdouble:open` and `/stuntdouble:doctor`). Local runs use the person's own Claude plan: this session is the actor, and the plugin's `local` MCP server (`npx stuntdouble@0.4.0 mcp`) only drives a local Chrome, writes files and serves the viewer. Nothing else calls a model, and no account is needed. Say so before the first run in a session.
 
 Where the `local` server's tools are missing, run `/stuntdouble:doctor`. Schedules, deploy and PR triggers, teams and several actors at once are cloud work: Studio's viewer has Run in the cloud (it says what it uploads before it does), or see https://www.stuntdouble.io.
 

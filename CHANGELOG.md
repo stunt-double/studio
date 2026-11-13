@@ -1,5 +1,15 @@
 # stuntdouble
 
+## 0.4.0
+
+### Minor Changes
+
+- [#18](https://github.com/stunt-double/studio/pull/18) [`8470d0b`](https://github.com/stunt-double/studio/commit/8470d0b4b532dcfcfe297dc560830cab70a5a07d) Thanks [@mrprkr](https://github.com/mrprkr)! - Each browser step in a run's `activity.jsonl` now records the page's address (without its query) and title after the step, how long the page kept it waiting (navigations and load states, not fixed pauses), and, for a step that moves the page without typing, a small picture under `steps/`. `run.json` gains `"revision": 2` and keeps its format, so earlier viewers still read it.
+
+- [#19](https://github.com/stunt-double/studio/pull/19) [`80a94ef`](https://github.com/stunt-double/studio/commit/80a94efc48f500243fae7848f13d1368f2e55cc7) Thanks [@mrprkr](https://github.com/mrprkr)! - Local interviews: `.stuntdouble/interviews/<slug>.json` holds a guide of questions and tasks, and four new MCP tools (`start_interview`, `answer_item`, `rate_usability`, `finish_interview`) have the actor answer it in character in your own agent's session, then rate the UMUX or UMUX-Lite statements, scored by the same code as the cloud. Each session is written to `.stuntdouble/interview-runs/<stamp>-<interview>/interview.json`, and the viewer serves it at `/api/interview-runs`.
+
+- [#17](https://github.com/stunt-double/studio/pull/17) [`c9d3fca`](https://github.com/stunt-double/studio/commit/c9d3fca8087eb7f4350c8d2a9c48ac82721bac2c) Thanks [@mrprkr](https://github.com/mrprkr)! - The run page now leads with highlights (the actor's summary, what needs attention, what it observed and the longest wait), then the score, then tabs for results, the journey, screenshots and activity. The journey draws the pages opened, the browser steps and each verdict with its screenshot on one rail, with the waits between them, as the Stunt Double web report does.
+
 ## 0.3.0
 
 ### Minor Changes

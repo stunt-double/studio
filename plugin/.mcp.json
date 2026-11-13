@@ -2,7 +2,7 @@
   "mcpServers": {
     "local": {
       "command": "npx",
-      "args": ["-y", "stuntdouble@0.3.0", "mcp"],
+      "args": ["-y", "stuntdouble@0.4.0", "mcp"],
       "env": {
         "STUNTDOUBLE_PROJECT_DIR": "${CLAUDE_PROJECT_DIR}"
       }
