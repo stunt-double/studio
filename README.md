@@ -16,11 +16,11 @@ An actor, an AI user, runs your checklist in a real Chrome on your machine. It b
 **From your coding agent.** Install the Claude Code plugin, then ask for a run:
 
 ```sh
-claude plugin marketplace add stunt-double/stuntdouble-mcp
-claude plugin install stuntdouble@stuntdouble
+claude plugin marketplace add stunt-double/studio
+claude plugin install stuntdouble@stuntdouble-studio
 ```
 
-In Claude Code, `/stuntdouble setup` writes the first actor and checklists, and `/stuntdouble run <checklist>` runs one. Your agent's session is the actor: the MCP server never calls a model of its own. Codex and other MCP clients start `npx stuntdouble mcp`: [setup for each](docs/coding-agents.md).
+In Claude Code, `/stuntdouble:setup` writes the first actor and checklists, and `/stuntdouble:run <checklist>` runs one. Your agent's session is the actor: the MCP server never calls a model of its own. Codex and other MCP clients start `npx stuntdouble mcp`: [setup for each](docs/coding-agents.md).
 
 **As a local app.** Open Studio in your browser:
 

@@ -49,6 +49,12 @@ Releases are automatic. On every push to `main`, `.github/workflows/release.yml`
 
 Publishing goes through npm trusted publishing: npm exchanges the job's GitHub OIDC token, so there is no npm token or secret. The trust relationship is configured once on npm (`npm trust github stuntdouble --repo stunt-double/studio --file release.yml --allow-publish`, which needs 2FA). Never publish from a laptop: a version published by hand skips provenance, and npm refuses the same version from CI afterwards.
 
+## The Claude Code plugin
+
+`plugin/` is the Claude Code plugin (`stuntdouble`, listed by the `stuntdouble-studio` marketplace in `.claude-plugin/marketplace.json`). It carries the skills (`/stuntdouble:setup`, `run`, `open` and `doctor`), the `stuntdouble-actor` agent and the opt-in hooks, and its `.mcp.json` starts this package from npm as `npx -y stuntdouble@<version> mcp`. It is not in the npm package.
+
+The plugin follows the package's version: `pnpm version-packages` runs `scripts/sync-plugin-version.mjs`, which sets `plugin.json`'s `version` and every `stuntdouble@x.y.z` pin in `plugin/`, so the "Version packages" pull request moves both. `test/plugin.test.ts` fails if they drift, or if the actor agent names a tool the server does not register. Check a change with `claude plugin validate plugin --strict`. The plugin is submitted to the Claude plugin directory from this repository with the plugin path `plugin`, tracking `main`; the directory picks up each new commit.
+
 ## browser-toolset
 
 The browser tools come from [`@stuntkit/browser-toolset`](https://github.com/stunt-double/stuntkit/tree/main/packages/browser-toolset) in StuntKit, on npm. It is pinned to an exact version in `devDependencies` and bundled into `dist/` by tsup's `noExternal`, so `stuntdouble` has no runtime dependency on it. To take a new version, bump the pin, run `pnpm install` and add a changeset.
